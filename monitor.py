@@ -1,16 +1,11 @@
-import json
 import requests
+import re
 
 from io import BytesIO
-from pypdf import PdfReader
-
 from datetime import datetime
 from bs4 import BeautifulSoup
+from pypdf import PdfReader
 
-
-# ==================================================
-# CONFIG
-# ==================================================
 
 URL_SAPIENZA = (
     "https://web.uniroma1.it/trasparenza/bandi_concorso_docenti/66"
@@ -39,31 +34,49 @@ KEYWORDS = [
     "tecniche di laboratorio biomedico",
     "fisiologia",
     "istologia",
-    "reumatologia",
+    "reumatologia"
 ]
 
-oggi = datetime.now()
 
+def trova_pdf_url(html):
 
-# ==================================================
-# PDF
-# ==================================================
+    pdf_urls = []
+
+    matches = re.findall(
+        r'https://web\.uniroma1\.it/trasparenza/sites/default/files/[^\s"<>\']+\.pdf',
+        html,
+        flags=re.IGNORECASE
+    )
+
+    for url in matches:
+
+        url = url.strip()
+
+        if url not in pdf_urls:
+            pdf_urls.append(url)
+
+    return pdf_urls
+
 
 def leggi_pdf(url):
 
     try:
 
-        print("SCARICO PDF:", url)
+        print("PDF:", url.split("/")[-1])
 
         response = requests.get(
             url,
             timeout=60
         )
 
-        print(
-            "STATUS PDF:",
-            response.status_code
-        )
+        if response.status_code != 200:
+
+            print(
+                "ERRORE DOWNLOAD:",
+                response.status_code
+            )
+
+            return ""
 
         reader = PdfReader(
             BytesIO(response.content)
@@ -72,13 +85,14 @@ def leggi_pdf(url):
         testo = ""
 
         for pagina in reader.pages:
+
             testo += (
                 pagina.extract_text()
                 or ""
             )
 
         print(
-            "LUNGHEZZA TESTO PDF:",
+            "LUNGHEZZA TESTO:",
             len(testo)
         )
 
@@ -94,56 +108,9 @@ def leggi_pdf(url):
         return ""
 
 
-# ==================================================
-# PDF URL
-# ==================================================
+print("\n=== TEST PDF REALI ===\n")
 
-def trova_pdf_url(html):
-
-    risultati = []
-
-    testo = html
-
-    marker = (
-        "https://web.uniroma1.it/trasparenza/"
-        "sites/default/files/"
-    )
-
-    posizione = 0
-
-    while True:
-
-        start = testo.find(
-            marker,
-            posizione
-        )
-
-        if start == -1:
-            break
-
-        end = testo.find(
-            ".pdf",
-            start
-        )
-
-        if end == -1:
-            break
-
-        pdf = testo[start:end + 4]
-
-        if pdf not in risultati:
-            risultati.append(pdf)
-
-        posizione = end + 4
-
-    return risultati
-
-
-# ==================================================
-# MAIN
-# ==================================================
-
-print("\n=== TEST COMPLETO PDF ===\n")
+oggi = datetime.now()
 
 pagina = requests.get(
     URL_SAPIENZA,
@@ -160,18 +127,12 @@ analizzati = 0
 for link in soup.find_all("a"):
 
     href = link.get("href")
-    titolo = link.get_text(
-        " ",
-        strip=True
-    )
+    titolo = link.get_text(" ", strip=True)
 
     if not href:
         continue
 
-    if (
-        "/trasparenza/dettaglio_bando_albo/"
-        not in href
-    ):
+    if "/trasparenza/dettaglio_bando_albo/" not in href:
         continue
 
     dettaglio_url = (
@@ -192,9 +153,7 @@ for link in soup.find_all("a"):
             "html.parser"
         )
 
-        testo = dettaglio_soup.get_text(
-            "\n"
-        )
+        testo = dettaglio_soup.get_text("\n")
 
         righe = [
             r.strip()
@@ -231,27 +190,23 @@ for link in soup.find_all("a"):
         if data_dt < oggi:
             continue
 
-        print("\n======================")
+        print("\n====================")
         print("TITOLO:", titolo)
         print("SCADENZA:", data_scadenza)
 
-        pdf_urls = trova_pdf_url(
-            html
-        )
+        pdf_urls = trova_pdf_url(html)
 
         print(
             "PDF TROVATI:",
             len(pdf_urls)
         )
 
-        if len(pdf_urls) == 0:
+        if not pdf_urls:
             continue
 
         for pdf_url in pdf_urls:
 
-            testo_pdf = leggi_pdf(
-                pdf_url
-            )
+            testo_pdf = leggi_pdf(pdf_url)
 
             for keyword in KEYWORDS:
 
@@ -273,7 +228,6 @@ for link in soup.find_all("a"):
             "ERRORE BANDO:",
             titolo
         )
-
         print(str(e))
 
 print("\n=== FINE TEST ===")
