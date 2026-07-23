@@ -10,17 +10,14 @@ soup = BeautifulSoup(response.text, "html.parser")
 
 for a in soup.find_all("a"):
 
-    href = a.get("href")
+    valore = str(a.get("href"))
 
-    if not href:
+    if "sites/default/files" not in valore:
         continue
 
-    href = str(href)
-
     urls = re.findall(
-        r'https://web\.uniroma1\.it/trasparenza/sites/default/files/[^"\s<>]+',
-        href
+        r'https://web\.uniroma1\.it/trasparenza/sites/default/files/[^"]+?\.pdf',
+        valore
     )
 
-    for pdf in urls:
-        print(pdf)
+    print("URLS TROVATI:", urls)
