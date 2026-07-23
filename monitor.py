@@ -9,4 +9,3 @@ testo = response.text.lower()
 print("pdf presente:", ".pdf" in testo)
 print("sites/default/files presente:", "sites/default/files" in testo)
 print("bando presente:", "bando_7-2026" in testo)
-``
