@@ -1,40 +1,8 @@
-import os
-import smtplib
-from email.mime.text import MIMEText
+import requests
 
-def invia_email(oggetto, testo):
-    email = os.environ.get("EMAIL_ADDRESS")
-    password = os.environ.get("EMAIL_PASSWORD")
+url = "https://web.uniroma1.it/trasparenza/bandi_concorso_docenti/66?field_user_centro_spesa_ugov_tid=All&field_data_pubblicazione_value%5Bvalue%5D%5Byear%5D=&field_bis_sc_e_ssd_tid=All&keys=&field_bis_gsd_ssd_target_id=All"
 
-    msg = MIMEText(testo)
-    msg["Subject"] = oggetto
-    msg["From"] = email
-    msg["To"] = email
+response = requests.get(url)
 
-    server = smtplib.SMTP("smtp.gmail.com", 587)
-    server.starttls()
-    server.login(email, password)
-    server.send_message(msg)
-    server.quit()
-
-bandi_trovati = [
-    {
-        "priorita": "ALTA",
-        "titolo": "Bando di prova",
-        "scadenza": "31/12/2026"
-    }
-]
-
-testo = ""
-
-for bando in bandi_trovati:
-    testo += f"[{bando['priorita']}]\n"
-    testo += f"Titolo: {bando['titolo']}\n"
-    testo += f"Scadenza: {bando['scadenza']}\n\n"
-
-invia_email(
-    "Monitor Bandi Universitari - Test",
-    testo
-)
-
-print("Email inviata")
+print("Status code:", response.status_code)
+print("Lunghezza pagina:", len(response.text))
