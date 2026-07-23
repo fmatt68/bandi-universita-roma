@@ -15,9 +15,11 @@ for a in soup.find_all("a"):
     if "sites/default/files" not in valore:
         continue
 
-    urls = re.findall(
-        r'https://web\.uniroma1\.it/trasparenza/sites/default/files/[^"]+?\.pdf',
+    match = re.search(
+        r'href="(https://web\.uniroma1\.it/trasparenza/sites/default/files/[^"]+\.pdf)"',
         valore
     )
 
-    print("URLS TROVATI:", urls)
+    if match:
+        print("PDF PULITO:")
+        print(match.group(1))
