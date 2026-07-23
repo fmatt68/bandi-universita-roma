@@ -9,7 +9,12 @@ soup = BeautifulSoup(response.text, "html.parser")
 
 strongs = soup.find_all("strong")
 
-for i, s in enumerate(strongs[:40]):
+for i in range(7, 17):
     print("-----")
     print(i)
-    print(repr(s.get_text(strip=True)))
+    print(repr(strongs[i].get_text(" ", strip=True)))
+
+    parent = strongs[i].parent
+
+    print("PARENT:")
+    print(parent.get_text(" ", strip=True)[:500])
