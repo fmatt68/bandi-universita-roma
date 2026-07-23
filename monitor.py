@@ -9,6 +9,7 @@ PAROLE_CHIAVE = [
     "oncologia",
     "immunologia",
     "genetica",
+    "genetica medica",
     "biologia",
     "biologia molecolare",
     "biologia cellulare",
@@ -23,16 +24,23 @@ PAROLE_CHIAVE = [
     "istologia"
 ]
 
-url = "https://web.uniroma1.it/trasparenza/bandi_concorso_docenti/66?field_user_centro_spesa_ugov_tid=All&field_data_pubblicazione_value%5Bvalue%5D%5Byear%5D=&field_bis_sc_e_ssd_tid=All&keys=&field_bis_gsd_ssd_target_id=All"
+URL_SAPIENZA = (
+    "https://web.uniroma1.it/trasparenza/bandi_concorso_docenti/66"
+    "?field_user_centro_spesa_ugov_tid=All"
+    "&field_data_pubblicazione_value%5Bvalue%5D%5Byear%5D="
+    "&field_bis_sc_e_ssd_tid=All"
+    "&keys="
+    "&field_bis_gsd_ssd_target_id=All"
+)
 
-response = requests.get(url)
+print("INIZIO ANALISI BANDI\n")
+
+response = requests.get(URL_SAPIENZA)
 soup = BeautifulSoup(response.text, "html.parser")
 
 links = soup.find_all("a")
 
 oggi = datetime.now()
-
-print("INIZIO ANALISI BANDI\n")
 
 contatore = 0
 
@@ -53,15 +61,23 @@ for link in links:
 
     try:
 
-        dettaglio = requests.get(dettaglio_url)
-        dettaglio_soup = BeautifulSoup(dettaglio.text, "html.parser")
+        dettaglio_response = requests.get(dettaglio_url)
+
+        dettaglio_soup = BeautifulSoup(
+            dettaglio_response.text,
+            "html.parser"
+        )
 
         testo_dettaglio = dettaglio_soup.get_text("\n")
 
         if "Data scadenza:" not in testo_dettaglio:
             continue
 
-        righe = [r.strip() for r in testo_dettaglio.splitlines() if r.strip()]
+        righe = [
+            r.strip()
+            for r in testo_dettaglio.splitlines()
+            if r.strip()
+        ]
 
         data_scadenza = None
 
@@ -74,10 +90,13 @@ for link in links:
         if not data_scadenza:
             continue
 
-        data_scadenza_dt = datetime.strptime(
-            data_scadenza,
-            "%d-%m-%Y"
-        )
+        try:
+            data_scadenza_dt = datetime.strptime(
+                data_scadenza,
+                "%d-%m-%Y"
+            )
+        except Exception:
+            continue
 
         if data_scadenza_dt < oggi:
             continue
@@ -93,39 +112,51 @@ for link in links:
             if not pdf_href:
                 continue
 
-            if "sites/default/files" not in str(pdf_href):
+            pdf_href = str(pdf_href)
+
+            if "sites/default/files" not in pdf_href:
                 continue
 
-            if ".pdf" not in str(pdf_href).lower():
+            if ".pdf" not in pdf_href.lower():
                 continue
 
-            pdf_response = requests.get(pdf_href)
+            try:
 
-            reader = PdfReader(BytesIO(pdf_response.content))
+                pdf_response = requests.get(pdf_href, timeout=30)
 
-            testo_pdf = ""
+                reader = PdfReader(
+                    BytesIO(pdf_response.content)
+                )
 
-            for pagina in reader.pages:
-                testo_pdf += pagina.extract_text() or ""
+                testo_pdf = ""
 
-            testo_pdf = testo_pdf.lower()
+                for pagina in reader.pages:
+                    testo_pdf += pagina.extract_text() or ""
 
-            for parola in PAROLE_CHIAVE:
+                testo_pdf = testo_pdf.lower()
 
-                if parola in testo_pdf:
+                for parola in PAROLE_CHIAVE:
 
-                    print("================================")
-                    print("TITOLO:", titolo)
-                    print("SCADENZA:", data_scadenza)
-                    print("PAROLA TROVATA:", parola)
-                    print("PDF:", pdf_href)
-                    print()
+                    if parola in testo_pdf:
 
-                    trovato = True
+                        print()
+                        print("================================")
+                        print("BANDO PERTINENTE TROVATO")
+                        print("================================")
+                        print("TITOLO:", titolo)
+                        print("SCADENZA:", data_scadenza)
+                        print("PAROLA CHIAVE:", parola)
+                        print("PDF:", pdf_href)
+                        print()
+
+                        trovato = True
+                        break
+
+                if trovato:
                     break
 
-            if trovato:
-                break
+            except Exception:
+                pass
 
         contatore += 1
 
@@ -135,4 +166,4 @@ for link in links:
     except Exception:
         pass
 
-print("FINE ANALISI")
+print("\nFINE ANALISI")
