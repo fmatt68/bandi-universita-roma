@@ -1,21 +1,23 @@
 import requests
-from bs4 import BeautifulSoup
+from pypdf import PdfReader
+from io import BytesIO
 
-url = "https://web.uniroma1.it/trasparenza/dettaglio_bando_albo/245584"
+pdf_url = "https://web.uniroma1.it/trasparenza/sites/default/files/Bando_7-2026_Instructor_IELTS.pdf"
 
-response = requests.get(url)
+response = requests.get(pdf_url)
 
-soup = BeautifulSoup(response.text, "html.parser")
+print("Download PDF:", response.status_code)
 
-links = soup.find_all("a")
+pdf_file = BytesIO(response.content)
 
-for link in links:
+reader = PdfReader(pdf_file)
 
-    testo = link.get_text(" ", strip=True)
-    href = link.get("href")
+print("Numero pagine:", len(reader.pages))
 
-    if testo or href:
+testo = ""
 
-        print("TESTO:", testo)
-        print("LINK:", href)
-        print("---")
+for page in reader.pages:
+    testo += page.extract_text() or ""
+
+print("\nPRIMI 3000 CARATTERI:\n")
+print(testo[:3000])
