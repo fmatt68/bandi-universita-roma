@@ -1,3 +1,4 @@
+import json
 import requests
 import re
 
@@ -6,6 +7,10 @@ from datetime import datetime
 from bs4 import BeautifulSoup
 from pypdf import PdfReader
 
+
+# =====================================
+# CONFIG
+# =====================================
 
 URL_SAPIENZA = (
     "https://web.uniroma1.it/trasparenza/bandi_concorso_docenti/66"
@@ -16,7 +21,9 @@ URL_SAPIENZA = (
     "&field_bis_gsd_ssd_target_id=All"
 )
 
-KEYWORDS = [
+STORICO_FILE = "storico.json"
+
+PRIORITA_ALTA = [
     "biologia",
     "biologia molecolare",
     "biologia cellulare",
@@ -25,18 +32,67 @@ KEYWORDS = [
     "genetica",
     "genetica medica",
     "immunologia",
-    "ematologia",
     "oncologia",
+    "ematologia"
+]
+
+PRIORITA_MEDIA = [
     "biochimica",
     "patologia generale",
     "medicina di laboratorio",
     "laboratorio biomedico",
-    "tecniche di laboratorio biomedico",
+    "tecniche di laboratorio biomedico"
+]
+
+PRIORITA_BASSA = [
     "fisiologia",
     "istologia",
     "reumatologia"
 ]
 
+
+# =====================================
+# STORICO
+# =====================================
+
+def carica_storico():
+
+    try:
+
+        with open(
+            STORICO_FILE,
+            "r",
+            encoding="utf-8"
+        ) as f:
+
+            return json.load(f)
+
+    except Exception:
+
+        return {
+            "bandi_gia_segnalati": []
+        }
+
+
+def salva_storico(storico):
+
+    with open(
+        STORICO_FILE,
+        "w",
+        encoding="utf-8"
+    ) as f:
+
+        json.dump(
+            storico,
+            f,
+            indent=2,
+            ensure_ascii=False
+        )
+
+
+# =====================================
+# PDF
+# =====================================
 
 def trova_pdf_url(html):
 
@@ -50,8 +106,6 @@ def trova_pdf_url(html):
 
     for url in matches:
 
-        url = url.strip()
-
         if url not in pdf_urls:
             pdf_urls.append(url)
 
@@ -62,20 +116,12 @@ def leggi_pdf(url):
 
     try:
 
-        print("PDF:", url.split("/")[-1])
-
         response = requests.get(
             url,
             timeout=60
         )
 
         if response.status_code != 200:
-
-            print(
-                "ERRORE DOWNLOAD:",
-                response.status_code
-            )
-
             return ""
 
         reader = PdfReader(
@@ -91,24 +137,51 @@ def leggi_pdf(url):
                 or ""
             )
 
-        print(
-            "LUNGHEZZA TESTO:",
-            len(testo)
-        )
-
         return testo.lower()
 
-    except Exception as e:
-
-        print(
-            "ERRORE PDF:",
-            str(e)
-        )
+    except Exception:
 
         return ""
 
 
-print("\n=== TEST PDF REALI ===\n")
+# =====================================
+# PRIORITA
+# =====================================
+
+def classifica(testo):
+
+    for parola in PRIORITA_ALTA:
+
+        if parola in testo:
+
+            return "ALTA", parola
+
+    for parola in PRIORITA_MEDIA:
+
+        if parola in testo:
+
+            return "MEDIA", parola
+
+    for parola in PRIORITA_BASSA:
+
+        if parola in testo:
+
+            return "BASSA", parola
+
+    return None, None
+
+
+# =====================================
+# MAIN
+# =====================================
+
+print("\n=== MONITOR DOCENZE ===\n")
+
+storico = carica_storico()
+
+gia_segnalati = set(
+    storico["bandi_gia_segnalati"]
+)
 
 oggi = datetime.now()
 
@@ -122,17 +195,25 @@ soup = BeautifulSoup(
     "html.parser"
 )
 
-analizzati = 0
+nuovi_bandi = []
 
 for link in soup.find_all("a"):
 
     href = link.get("href")
-    titolo = link.get_text(" ", strip=True)
+    titolo = link.get_text(
+        " ",
+        strip=True
+    )
 
     if not href:
         continue
 
     if "/trasparenza/dettaglio_bando_albo/" not in href:
+        continue
+
+    bando_id = href.split("/")[-1]
+
+    if bando_id in gia_segnalati:
         continue
 
     dettaglio_url = (
@@ -185,49 +266,106 @@ for link in soup.find_all("a"):
             )
 
         except Exception:
+
             continue
 
         if data_dt < oggi:
             continue
 
-        print("\n====================")
-        print("TITOLO:", titolo)
-        print("SCADENZA:", data_scadenza)
-
         pdf_urls = trova_pdf_url(html)
 
-        print(
-            "PDF TROVATI:",
-            len(pdf_urls)
-        )
-
-        if not pdf_urls:
-            continue
+        testo_completo = ""
 
         for pdf_url in pdf_urls:
 
-            testo_pdf = leggi_pdf(pdf_url)
+            testo_completo += (
+                leggi_pdf(pdf_url)
+                + "\n"
+            )
 
-            for keyword in KEYWORDS:
+        priorita, keyword = classifica(
+            testo_completo
+        )
 
-                if keyword in testo_pdf:
+        if not priorita:
+            continue
 
-                    print(
-                        "MATCH:",
-                        keyword
-                    )
-
-        analizzati += 1
-
-        if analizzati >= 10:
-            break
+        nuovi_bandi.append(
+            {
+                "id": bando_id,
+                "titolo": titolo,
+                "scadenza": data_scadenza,
+                "priorita": priorita,
+                "keyword": keyword,
+                "url": dettaglio_url
+            }
+        )
 
     except Exception as e:
 
         print(
-            "ERRORE BANDO:",
+            "ERRORE:",
             titolo
         )
+
         print(str(e))
 
-print("\n=== FINE TEST ===")
+ordine = {
+    "ALTA": 1,
+    "MEDIA": 2,
+    "BASSA": 3
+}
+
+nuovi_bandi.sort(
+    key=lambda x: ordine[x["priorita"]]
+)
+
+if not nuovi_bandi:
+
+    print(
+        "NESSUN NUOVO BANDO PERTINENTE"
+    )
+
+else:
+
+    print(
+        f"NUOVI BANDI TROVATI: {len(nuovi_bandi)}\n"
+    )
+
+    for bando in nuovi_bandi:
+
+        print(
+            f"[{bando['priorita']}]"
+        )
+
+        print(
+            "Titolo:",
+            bando["titolo"]
+        )
+
+        print(
+            "Keyword:",
+            bando["keyword"]
+        )
+
+        print(
+            "Scadenza:",
+            bando["scadenza"]
+        )
+
+        print(
+            "URL:",
+            bando["url"]
+        )
+
+        print()
+
+        storico[
+            "bandi_gia_segnalati"
+        ].append(
+            bando["id"]
+        )
+
+salva_storico(storico)
+
+print("\n=== FINE ===")
