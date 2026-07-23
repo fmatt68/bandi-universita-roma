@@ -5,10 +5,17 @@ url = "https://web.uniroma1.it/trasparenza/dettaglio_bando_albo/245584"
 
 response = requests.get(url)
 
-print("Status code:", response.status_code)
-
 soup = BeautifulSoup(response.text, "html.parser")
 
-testo = soup.get_text("\n")
+links = soup.find_all("a")
 
-print(testo[:5000])
+for link in links:
+
+    testo = link.get_text(" ", strip=True)
+    href = link.get("href")
+
+    if testo or href:
+
+        print("TESTO:", testo)
+        print("LINK:", href)
+        print("---")
