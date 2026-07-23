@@ -7,11 +7,20 @@ response = requests.get(url)
 
 soup = BeautifulSoup(response.text, "html.parser")
 
-strongs = soup.find_all("strong")
+testo = soup.get_text("\n")
 
-print("Numero tag strong:", len(strongs))
+righe = []
 
-for i, s in enumerate(strongs[:100]):
-    testo = s.get_text(" ", strip=True)
-    if testo:
-        print(i, testo)
+for r in testo.splitlines():
+    r = r.strip()
+    if r:
+        righe.append(r)
+
+for i, riga in enumerate(righe[:300]):
+    if "Instructor per corsi di preparazione esami IELTS" in riga:
+        print("=== INIZIO BLOCCO ===")
+
+        for j in range(i, min(i + 15, len(righe))):
+            print(righe[j])
+
+        print("=== FINE BLOCCO ===")
