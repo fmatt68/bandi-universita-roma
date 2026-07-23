@@ -18,3 +18,4 @@ jobs:
         run: python monitor.py
         env:
           EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
