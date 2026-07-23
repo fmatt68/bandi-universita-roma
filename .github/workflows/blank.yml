@@ -17,8 +17,8 @@ jobs:
       - name: Installa librerie
         run: pip install requests beautifulsoup4 pypdf
       
-      - name: Test UniCamillus
-        run: python testUnicamillus.py
+      - name: Test Sapienza
+        run: python monitor.py
         env:
           EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
