@@ -18,7 +18,7 @@ jobs:
         run: pip install requests beautifulsoup4 pypdf
       
       - name: Esegui monitor.py
-        run: python monitor.py
+        run: python test_UniCamillus.py
         env:
           EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
