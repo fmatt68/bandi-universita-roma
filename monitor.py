@@ -14,15 +14,13 @@ URL_SAPIENZA = (
 response = requests.get(URL_SAPIENZA)
 soup = BeautifulSoup(response.text, "html.parser")
 
-links = soup.find_all("a")
-
 oggi = datetime.now()
+
+print("INIZIO TEST PDF\n")
 
 contatore = 0
 
-print("INIZIO ANALISI PDF\n")
-
-for link in links:
+for link in soup.find_all("a"):
 
     titolo = link.get_text(" ", strip=True)
     href = link.get("href")
@@ -35,75 +33,63 @@ for link in links:
 
     dettaglio_url = "https://web.uniroma1.it" + href
 
-    try:
+    dettaglio = requests.get(dettaglio_url)
 
-        dettaglio = requests.get(dettaglio_url)
+    dettaglio_soup = BeautifulSoup(
+        dettaglio.text,
+        "html.parser"
+    )
 
-        dettaglio_soup = BeautifulSoup(
-            dettaglio.text,
-            "html.parser"
-        )
+    testo = dettaglio_soup.get_text("\n")
 
-        testo = dettaglio_soup.get_text("\n")
+    righe = [
+        r.strip()
+        for r in testo.splitlines()
+        if r.strip()
+    ]
 
-        righe = [
-            r.strip()
-            for r in testo.splitlines()
-            if r.strip()
-        ]
+    data_scadenza = None
 
-        data_scadenza = None
+    for i, riga in enumerate(righe):
 
-        for i, riga in enumerate(righe):
-
-            if riga == "Data scadenza:" and i + 1 < len(righe):
-                data_scadenza = righe[i + 1]
-                break
-
-        if not data_scadenza:
-            continue
-
-        try:
-            data_scadenza_dt = datetime.strptime(
-                data_scadenza,
-                "%d-%m-%Y"
-            )
-        except Exception:
-            continue
-
-        if data_scadenza_dt < oggi:
-            continue
-
-        print("\n================================")
-        print("TITOLO:", titolo)
-        print("SCADENZA:", data_scadenza)
-
-        pdf_presenti = False
-
-        for a in dettaglio_soup.find_all("a"):
-
-            pdf_href = a.get("href")
-
-            if not pdf_href:
-                continue
-
-            pdf_href = str(pdf_href)
-
-            if ".pdf" in pdf_href.lower():
-
-                pdf_presenti = True
-
-                print("PDF:", pdf_href)
-
-        if not pdf_presenti:
-            print("NESSUN PDF TROVATO")
-
-        contatore += 1
-
-        if contatore >= 10:
+        if riga == "Data scadenza:" and i + 1 < len(righe):
+            data_scadenza = righe[i + 1]
             break
 
-    except Exception as e:
-        print("ERRORE:", e)
+    if not data_scadenza:
+        continue
 
-print("\nFINE ANALISI PDF")
+    try:
+        data_scadenza_dt = datetime.strptime(
+            data_scadenza,
+            "%d-%m-%Y"
+        )
+    except:
+        continue
+
+    if data_scadenza_dt < oggi:
+        continue
+
+    print("\n========================")
+    print("TITOLO:", titolo)
+
+    for a in dettaglio_soup.find_all("a"):
+
+        pdf = a.get("href")
+
+        if not pdf:
+            continue
+
+        pdf = str(pdf)
+
+        if ".pdf" in pdf.lower():
+
+            print("PDF REALE:")
+            print(pdf)
+
+    contatore += 1
+
+    if contatore >= 5:
+        break
+
+print("\nFINE TEST")
