@@ -17,8 +17,10 @@ for a in soup.find_all("a"):
 
     href = str(href)
 
-    match = re.search(r'https://[^"]+\.pdf', href)
+    urls = re.findall(
+        r'https://web\.uniroma1\.it/trasparenza/sites/default/files/[^"\s<>]+',
+        href
+    )
 
-    if match:
-        print("PDF TROVATO:")
-        print(match.group(0))
+    for pdf in urls:
+        print(pdf)
