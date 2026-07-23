@@ -49,6 +49,8 @@ for link in links:
 
     dettaglio_url = "https://web.uniroma1.it" + href
 
+    print("ANALIZZO:", titolo)
+
     try:
 
         dettaglio = requests.get(dettaglio_url)
@@ -127,7 +129,7 @@ for link in links:
 
         contatore += 1
 
-        if contatore >= 15:
+        if contatore >= 50:
             break
 
     except Exception:
