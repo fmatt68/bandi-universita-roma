@@ -16,3 +16,5 @@ jobs:
 
       - name: Esegui monitor.py
         run: python monitor.py
+        env:
+          EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
