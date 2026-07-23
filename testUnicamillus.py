@@ -1,21 +1,20 @@
 import requests
-from bs4 import BeautifulSoup
+from io import BytesIO
+from pypdf import PdfReader
 
-url = "https://unicamillus.org/lavora-con-noi/bandi-docenti/"
+pdf_url = "https://unicamillus.org/wp-content/uploads/bandi-docenti/2026/dr_58-2026_avviso_manifestazione-di-interesse-confermineto-incarichi-docenti-a-contratto.pdf"
 
-r = requests.get(url, timeout=30)
+response = requests.get(pdf_url, timeout=60)
 
-print("STATUS:", r.status_code)
+print("STATUS:", response.status_code)
 
-soup = BeautifulSoup(r.text, "html.parser")
+reader = PdfReader(BytesIO(response.content))
 
-for a in soup.find_all("a"):
+testo = ""
 
-    href = a.get("href")
-    testo = a.get_text(" ", strip=True)
+for pagina in reader.pages:
+    testo += pagina.extract_text() or ""
 
-    if href and testo:
-
-        print("TESTO:", testo[:100])
-        print("LINK:", href)
-        print()
+print("\n=== INIZIO TESTO ===\n")
+print(testo[:12000])
+print("\n=== FINE TESTO ===")
