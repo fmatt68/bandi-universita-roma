@@ -17,9 +17,24 @@ def invia_email(oggetto, testo):
     server.send_message(msg)
     server.quit()
 
+bandi_trovati = [
+    {
+        "priorita": "ALTA",
+        "titolo": "Bando di prova",
+        "scadenza": "31/12/2026"
+    }
+]
+
+testo = ""
+
+for bando in bandi_trovati:
+    testo += f"[{bando['priorita']}]\n"
+    testo += f"Titolo: {bando['titolo']}\n"
+    testo += f"Scadenza: {bando['scadenza']}\n\n"
+
 invia_email(
-    "Test Sistema Bandi",
-    "Ciao Fabrizio, il sistema è pronto per il monitoraggio."
+    "Monitor Bandi Universitari - Test",
+    testo
 )
 
 print("Email inviata")
