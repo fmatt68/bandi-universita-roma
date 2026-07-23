@@ -1,5 +1,4 @@
 import requests
-
 from io import BytesIO
 from pypdf import PdfReader
 
@@ -7,14 +6,12 @@ pdf_url = "https://web.uniroma1.it/trasparenza/sites/default/files/1.%20Bando%20
 
 response = requests.get(pdf_url)
 
-reader = PdfReader(
-    BytesIO(response.content)
-)
+reader = PdfReader(BytesIO(response.content))
 
-testo = ""
+for i, pagina in enumerate(reader.pages):
 
-for pagina in reader.pages:
+    testo = pagina.extract_text() or ""
 
-    testo += pagina.extract_text() or ""
-
-print(testo[:10000])
+    if "BIO" in testo.upper():
+        print("\nPAGINA", i + 1)
+        print(testo[:3000])
