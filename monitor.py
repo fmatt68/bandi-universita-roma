@@ -1,10 +1,27 @@
+import json
 import requests
-from bs4 import BeautifulSoup
-from datetime import datetime
 
-# ==========================
+from io import BytesIO
+from pypdf import PdfReader
+
+from datetime import datetime
+from bs4 import BeautifulSoup
+
+
+# =====================================
 # CONFIGURAZIONE
-# ==========================
+# =====================================
+
+STORICO_FILE = "storico.json"
+
+URL_SAPIENZA = (
+    "https://web.uniroma1.it/trasparenza/bandi_concorso_docenti/66"
+    "?field_user_centro_spesa_ugov_tid=All"
+    "&field_data_pubblicazione_value%5Bvalue%5D%5Byear%5D="
+    "&field_bis_sc_e_ssd_tid=All"
+    "&keys="
+    "&field_bis_gsd_ssd_target_id=All"
+)
 
 PRIORITA_ALTA = [
     "ematologia",
@@ -45,87 +62,173 @@ ESCLUSIONI = [
 ]
 
 
-# ==========================
-# FUNZIONI
-# ==========================
+# =====================================
+# STORICO
+# =====================================
 
-def determina_priorita(testo):
+def carica_storico():
+
+    try:
+
+        with open(
+            STORICO_FILE,
+            "r",
+            encoding="utf-8"
+        ) as f:
+
+            return json.load(f)
+
+    except Exception:
+
+        return {
+            "bandi_gia_segnalati": []
+        }
+
+
+def salva_storico(storico):
+
+    with open(
+        STORICO_FILE,
+        "w",
+        encoding="utf-8"
+    ) as f:
+
+        json.dump(
+            storico,
+            f,
+            indent=2,
+            ensure_ascii=False
+        )
+
+
+# =====================================
+# PRIORITA'
+# =====================================
+
+def assegna_priorita(testo):
 
     testo = testo.lower()
 
     for parola in ESCLUSIONI:
+
         if parola in testo:
             return None, None
 
     for parola in PRIORITA_ALTA:
+
         if parola in testo:
             return "ALTA", parola
 
     for parola in PRIORITA_MEDIA:
+
         if parola in testo:
             return "MEDIA", parola
 
     for parola in PRIORITA_BASSA:
+
         if parola in testo:
             return "BASSA", parola
 
     return None, None
 
 
-def estrai_data_scadenza(testo):
+# =====================================
+# PDF
+# =====================================
 
-    righe = [
-        r.strip()
-        for r in testo.splitlines()
-        if r.strip()
-    ]
+def leggi_pdf(pdf_url):
 
-    for i, riga in enumerate(righe):
+    try:
 
-        if riga == "Data scadenza:" and i + 1 < len(righe):
+        response = requests.get(
+            pdf_url,
+            timeout=60
+        )
 
-            try:
-                return datetime.strptime(
-                    righe[i + 1],
-                    "%d-%m-%Y"
-                )
-            except:
-                return None
+        reader = PdfReader(
+            BytesIO(response.content)
+        )
 
-    return None
+        testo = ""
 
+        for pagina in reader.pages:
+
+            testo += (
+                pagina.extract_text() or ""
+            )
+
+        return testo.lower()
+
+    except Exception:
+
+        return ""
+
+
+# =====================================
+# RICERCA URL PDF
+# =====================================
+
+def trova_pdf(dettaglio_html):
+
+    pdf_urls = []
+
+    import re
+
+    pattern = (
+        r'https://web\.uniroma1\.it'
+        r'/trasparenza/sites/default/files/'
+        r'[^"\s<>]+\.pdf'
+    )
+
+    trovati = re.findall(
+        pattern,
+        dettaglio_html
+    )
+
+    for url in trovati:
+
+        if url not in pdf_urls:
+
+            pdf_urls.append(url)
+
+    return pdf_urls
+
+
+# =====================================
+# SAPIENZA
+# =====================================
 
 def cerca_bandi_sapienza():
 
     risultati = []
 
-    url = (
-        "https://web.uniroma1.it/trasparenza/bandi_concorso_docenti/66"
-        "?field_user_centro_spesa_ugov_tid=All"
-        "&field_data_pubblicazione_value%5Bvalue%5D%5Byear%5D="
-        "&field_bis_sc_e_ssd_tid=All"
-        "&keys="
-        "&field_bis_gsd_ssd_target_id=All"
-    )
+    oggi = datetime.now()
 
-    pagina = requests.get(url, timeout=30)
+    pagina = requests.get(
+        URL_SAPIENZA,
+        timeout=30
+    )
 
     soup = BeautifulSoup(
         pagina.text,
         "html.parser"
     )
 
-    oggi = datetime.now()
-
     for link in soup.find_all("a"):
 
         href = link.get("href")
-        titolo = link.get_text(" ", strip=True)
+        titolo = link.get_text(
+            " ",
+            strip=True
+        )
 
         if not href:
             continue
 
-        if "/trasparenza/dettaglio_bando_albo/" not in href:
+        if (
+            "/trasparenza/dettaglio_bando_albo/"
+            not in href
+        ):
             continue
 
         dettaglio_url = (
@@ -139,25 +242,75 @@ def cerca_bandi_sapienza():
                 timeout=30
             )
 
+            dettagli_html = dettaglio.text
+
             dettaglio_soup = BeautifulSoup(
-                dettaglio.text,
+                dettagli_html,
                 "html.parser"
             )
 
-            testo = dettaglio_soup.get_text("\n")
-
-            data_scadenza = estrai_data_scadenza(
-                testo
+            testo_dettaglio = (
+                dettaglio_soup.get_text("\n")
             )
+
+            righe = [
+                r.strip()
+                for r in testo_dettaglio.splitlines()
+                if r.strip()
+            ]
+
+            data_scadenza = None
+
+            for i, riga in enumerate(righe):
+
+                if (
+                    riga == "Data scadenza:"
+                    and i + 1 < len(righe)
+                ):
+                    data_scadenza = (
+                        righe[i + 1]
+                    )
+                    break
 
             if not data_scadenza:
                 continue
 
-            if data_scadenza < oggi:
+            try:
+
+                data_dt = datetime.strptime(
+                    data_scadenza,
+                    "%d-%m-%Y"
+                )
+
+            except Exception:
+
                 continue
 
-            priorita, keyword = determina_priorita(
-                testo
+            if data_dt < oggi:
+                continue
+
+            pdf_urls = trova_pdf(
+                dettagli_html
+            )
+
+            testo_completo = (
+                testo_dettaglio.lower()
+            )
+
+            for pdf_url in pdf_urls:
+
+                testo_pdf = leggi_pdf(
+                    pdf_url
+                )
+
+                testo_completo += (
+                    "\n" + testo_pdf
+                )
+
+            priorita, keyword = (
+                assegna_priorita(
+                    testo_completo
+                )
             )
 
             if not priorita:
@@ -165,29 +318,55 @@ def cerca_bandi_sapienza():
 
             risultati.append(
                 {
-                    "titolo": titolo,
+                    "id": href.split("/")[-1],
                     "priorita": priorita,
                     "keyword": keyword,
-                    "scadenza": data_scadenza.strftime(
-                        "%d-%m-%Y"
-                    ),
+                    "titolo": titolo,
+                    "scadenza": data_scadenza,
                     "url": dettaglio_url
                 }
             )
 
-        except Exception:
-            continue
+        except Exception as e:
+
+            print(
+                "Errore:",
+                titolo,
+                str(e)
+            )
 
     return risultati
 
 
-# ==========================
+# =====================================
 # MAIN
-# ==========================
+# =====================================
 
-print("\n=== MONITOR SAPIENZA ===\n")
+print("\n=== MONITOR DOCENZE ===\n")
+
+storico = carica_storico()
+
+gia_segnalati = set(
+    storico["bandi_gia_segnalati"]
+)
 
 bandi = cerca_bandi_sapienza()
+
+nuovi = []
+
+for bando in bandi:
+
+    if bando["id"] not in gia_segnalati:
+
+        nuovi.append(bando)
+
+        storico[
+            "bandi_gia_segnalati"
+        ].append(
+            bando["id"]
+        )
+
+salva_storico(storico)
 
 ordine = {
     "ALTA": 1,
@@ -195,48 +374,42 @@ ordine = {
     "BASSA": 3
 }
 
-bandi.sort(
+nuovi.sort(
     key=lambda x: ordine[x["priorita"]]
 )
 
-if not bandi:
+if not nuovi:
 
     print(
-        "NESSUN BANDO PERTINENTE TROVATO"
+        "NESSUN NUOVO BANDO PERTINENTE"
     )
 
 else:
 
     print(
-        f"Trovati {len(bandi)} bandi pertinenti\n"
+        f"NUOVI BANDI TROVATI: {len(nuovi)}\n"
     )
 
-    for bando in bandi:
+    for b in nuovi:
 
         print(
-            f"[{bando['priorita']}]"
+            f"[{b['priorita']}]"
         )
-
         print(
-            "Titolo:",
-            bando["titolo"]
+            b["titolo"]
         )
-
         print(
             "Keyword:",
-            bando["keyword"]
+            b["keyword"]
         )
-
         print(
             "Scadenza:",
-            bando["scadenza"]
+            b["scadenza"]
         )
-
         print(
             "URL:",
-            bando["url"]
+            b["url"]
         )
-
         print()
 
 print("=== FINE ===")
