@@ -15,7 +15,7 @@ jobs:
           python-version: '3.11'
 
       - name: Installa librerie
-        run: pip install requests beautifulsoup4
+        run: pip install requests beautifulsoup4 pypdf
       
       - name: Esegui monitor.py
         run: python monitor.py
