@@ -353,9 +353,9 @@ def cerca_bandi_sapienza():
             # Se è un bando di didattica/docenza ma non contiene
             # keyword biologiche o mediche, non lo scartiamo.
             if not priorita:
- 
+                
             priorita = "DOCENZA"
- 
+            
             keyword = (
             "didattica/docenza"
                 )
