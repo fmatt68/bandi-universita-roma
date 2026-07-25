@@ -222,7 +222,7 @@ def cerca_bandi_sapienza():
 
     pagina = requests.get(
         URL_SAPIENZA,
-        timeout=30
+        timeout=60
     )
 
     soup = BeautifulSoup(
@@ -252,7 +252,7 @@ def cerca_bandi_sapienza():
 
             dettaglio = requests.get(
                 dettaglio_url,
-                timeout=30
+                timeout=60
             )
 
             html = dettaglio.text
