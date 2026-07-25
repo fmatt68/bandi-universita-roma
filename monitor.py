@@ -382,6 +382,88 @@ def cerca_bandi_sapienza():
     return risultati
 
 
+# INVIO EMAIL
+
+def invia_email(bandi):
+
+    email_address = os.environ.get(
+        "EMAIL_ADDRESS"
+    )
+
+    email_password = os.environ.get(
+        "EMAIL_PASSWORD"
+    )
+
+    if not email_address:
+
+        print(
+            "EMAIL_ADDRESS non configurata"
+        )
+
+        return
+
+    testo = []
+
+    testo.append(
+        f"Nuovi bandi trovati: {len(bandi)}\n"
+    )
+
+    for bando in bandi:
+
+        testo.append(
+            f"""
+[{bando['priorita']}]
+
+Titolo: {bando['titolo']}
+Keyword: {bando['keyword']}
+Scadenza: {bando['scadenza']}
+URL: {bando['url']}
+"""
+        )
+
+    corpo = "\n".join(testo)
+
+    msg = MIMEMultipart()
+
+    msg["From"] = email_address
+    msg["To"] = email_address
+    msg["Subject"] = (
+        f"[{len(bandi)}] Nuovi bandi Sapienza"
+    )
+
+    msg.attach(
+        MIMEText(
+            corpo,
+            "plain",
+            "utf-8"
+        )
+    )
+
+    server = smtplib.SMTP(
+        "smtp.gmail.com",
+        587
+    )
+
+    server.starttls()
+
+    server.login(
+        email_address,
+        email_password
+    )
+
+    server.send_message(
+        msg
+    )
+
+    server.quit()
+
+    print(
+        "EMAIL INVIATA"
+    )
+
+
+
+
 # ==========================================
 # MAIN
 # ==========================================
@@ -434,6 +516,10 @@ if not nuovi:
     )
 
 else:
+
+    invia_email(
+        nuovi
+    )
 
     print(
         f"NUOVI BANDI TROVATI: {len(nuovi)}\n"
