@@ -7,6 +7,11 @@ from datetime import datetime
 from bs4 import BeautifulSoup
 from pypdf import PdfReader
 
+import os
+import smtplib
+
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 # ==========================================
 # CONFIG
