@@ -51,21 +51,43 @@ KEYWORDS_BASSA = [
 ]
 
 FILTRO_TITOLO = [
-    "health",
-    "sanitario",
+
+    # docenze
+    "docenza",
+    "docente",
+    "didattica",
+    "insegnamento",
+    "insegnamenti",
+    "affidamento",
+    "incarico",
+    "contratto",
+
+    # medicina
     "medicina",
     "medico",
-    "biologia",
-    "biotecnologie",
-    "genetica",
+    "sanitario",
+    "health",
+    "chirurgia",
+    "anatomia",
+    "fisiologia",
+    "patologia",
     "oncologia",
     "ematologia",
-    "farmacia",
+    "immunologia",
     "farmacologia",
+
+    # biologia
+    "biologia",
+    "biologia molecolare",
+    "biologia cellulare",
+    "scienze biologiche",
+    "biotecnologie",
+    "genetica",
+
+    # aree affini
+    "farmacia",
     "biomedico",
-    "laboratorio",
-    "patologia",
-    "immunologia"
+    "laboratorio"
 ]
 
 
@@ -327,7 +349,16 @@ def cerca_bandi_sapienza():
             priorita, keyword = classifica(
                 testo_completo
             )
-
+            
+            # Se è un bando di didattica/docenza ma non contiene
+            # keyword biologiche o mediche, non lo scartiamo.
+            if not priorita:
+ 
+            priorita = "DOCENZA"
+ 
+            keyword = (
+            "didattica/docenza"
+                )
             if not priorita:
                 continue
 
@@ -387,7 +418,8 @@ salva_storico(storico)
 ordine = {
     "ALTA": 1,
     "MEDIA": 2,
-    "BASSA": 3
+    "BASSA": 3,
+    "DOCENZA": 4
 }
 
 nuovi.sort(
