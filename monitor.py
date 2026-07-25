@@ -354,14 +354,10 @@ def cerca_bandi_sapienza():
             # keyword biologiche o mediche, non lo scartiamo.
             if not priorita:
                 
-            priorita = "DOCENZA"
+                priorita = "DOCENZA"
             
-            keyword = (
-            "didattica/docenza"
-                )
-            if not priorita:
-                continue
-
+                keyword = "didattica/docenza"
+                    
             risultati.append(
                 {
                     "id": href.split("/")[-1],
