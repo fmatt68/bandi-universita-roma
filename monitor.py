@@ -317,6 +317,11 @@ def cerca_bandi_sapienza():
                     candidato = True
 
             if not candidato:
+                
+                print(
+                    f"SCARTATO: {titolo}"
+                )
+                
                 continue
 
             priorita, keyword = classifica(
