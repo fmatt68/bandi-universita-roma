@@ -33,7 +33,7 @@ def analizza_pagina(html):
         strip=True
     )
 
-        posizione = testo.find(
+    posizione = testo.find(
         "BANDI APERTI"
     )
 
