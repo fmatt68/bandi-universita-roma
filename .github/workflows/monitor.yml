@@ -23,6 +23,9 @@ jobs:
           EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
 
+      - name: Test UniCamillus
+        run: python monitor_unicamillus.py
+
       - name: Commit storico aggiornato
         run: |
           git config --global user.name "github-actions"
