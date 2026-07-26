@@ -28,7 +28,10 @@ jobs:
         env:
           EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
-          
+
+      - name: Test Tor Vergata
+        run: python monitor_torvergata.py
+
       - name: Commit storico aggiornato
         run: |
           git config --global user.name "github-actions"
