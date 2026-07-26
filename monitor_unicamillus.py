@@ -23,13 +23,26 @@ EMAIL_PASSWORD = os.getenv(
     "EMAIL_PASSWORD"
 )
 
+
 KEYWORDS_INTERESSE = [
     "insegnamento a contratto",
+    "Docenza a contratto",
+    "Insegnamenti a contratto",
+    "Docenze a contratto",
+    "Manifestazione di interesse",
+    "Manifestazioni di interesse",
     "professore universitario",
     "prima fascia",
-    "seconda fascia",
     "bios-",
-    "meds-"
+    "meds-",
+    "iinf-",
+    "phys-",
+    "odontoiatria",
+    "medicina",
+    "chirurgia",
+    "anatomia",
+    "patologia",
+    "oncologia"
 ]
 
 
