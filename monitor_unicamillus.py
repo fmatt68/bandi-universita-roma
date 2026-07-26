@@ -33,9 +33,20 @@ def analizza_pagina(html):
         strip=True
     )
 
-    print(
-        testo[:1000]
+        posizione = testo.find(
+        "BANDI APERTI"
     )
+
+    print(
+        "Posizione BANDI APERTI:",
+        posizione
+    )
+
+    if posizione != -1:
+
+        print(
+            testo[posizione:posizione + 3000]
+        )
 
 # ==========================================
 # MAIN
