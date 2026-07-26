@@ -1,3 +1,4 @@
+import json
 import requests
 
 from bs4 import BeautifulSoup
@@ -7,6 +8,9 @@ URL_UNICAMILLUS = (
     "https://unicamillus.org/lavora-con-noi/bandi-docenti/"
 )
 
+FILE_STORICO = (
+    "storico_unicamillus.json"
+)
 
 KEYWORDS_INTERESSE = [
 
@@ -22,6 +26,43 @@ KEYWORDS_INTERESSE = [
 
     "meds-"
 ]
+
+
+def carica_storico():
+
+    try:
+
+        with open(
+            FILE_STORICO,
+            "r",
+            encoding="utf-8"
+        ) as file:
+
+            return json.load(
+                file
+            )
+
+    except:
+
+        return {
+            "bandi_gia_segnalati": []
+        }
+
+
+def salva_storico(storico):
+
+    with open(
+        FILE_STORICO,
+        "w",
+        encoding="utf-8"
+    ) as file:
+
+        json.dump(
+            storico,
+            file,
+            indent=2,
+            ensure_ascii=False
+        )
 
 
 def scarica_pagina():
@@ -61,10 +102,6 @@ def estrai_bandi_aperti(html):
 
     if inizio == -1:
 
-        print(
-            "Sezione BANDI APERTI non trovata"
-        )
-
         return ""
 
     if fine == -1:
@@ -76,19 +113,34 @@ def estrai_bandi_aperti(html):
     ]
 
 
-def analizza_bandi(sezione):
+def genera_id(sezione):
 
-    print(
-        "\n=== BANDI APERTI UNICAMILLUS ===\n"
+    righe = []
+
+    for riga in sezione.splitlines():
+
+        riga = riga.strip()
+
+        if not riga:
+
+            continue
+
+        if (
+            "Scadenza:" in riga
+            or "SSD " in riga
+            or "GSD " in riga
+        ):
+
+            righe.append(
+                riga
+            )
+
+    return "|".join(
+        righe[:20]
     )
 
-    print(
-        sezione
-    )
 
-    print(
-        "\n=== RISULTATO FILTRI ===\n"
-    )
+def analizza_bando(sezione):
 
     sezione_minuscola = (
         sezione.lower()
@@ -104,28 +156,18 @@ def analizza_bandi(sezione):
                 parola
             )
 
-    if trovate:
-
-        for elemento in trovate:
-
-            print(
-                f"TROVATO: {elemento}"
-            )
-
-    else:
-
-        print(
-            "Nessuna keyword trovata"
-        )
-
-    print(
-        "\n=== FINE ==="
-    )
+    return trovate
 
 
 # ==========================================
 # MAIN
 # ==========================================
+
+print(
+    "\n=== MONITOR UNICAMILLUS ===\n"
+)
+
+storico = carica_storico()
 
 html = scarica_pagina()
 
@@ -133,6 +175,50 @@ sezione_bandi = estrai_bandi_aperti(
     html
 )
 
-analizza_bandi(
+id_bando = genera_id(
     sezione_bandi
+)
+
+if id_bando in storico[
+    "bandi_gia_segnalati"
+]:
+
+    print(
+        "NESSUN NUOVO BANDO"
+    )
+
+else:
+
+    parole_trovate = (
+        analizza_bando(
+            sezione_bandi
+        )
+    )
+
+    print(
+        "NUOVI BANDI APERTI\n"
+    )
+
+    for parola in parole_trovate:
+
+        print(
+            f"TROVATO: {parola}"
+        )
+
+    storico[
+        "bandi_gia_segnalati"
+    ].append(
+        id_bando
+    )
+
+    salva_storico(
+        storico
+    )
+
+    print(
+        "\nSTORICO AGGIORNATO"
+    )
+
+print(
+    "\n=== FINE ==="
 )
