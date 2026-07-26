@@ -153,15 +153,37 @@ def estrai_bandi_aperti(html):
 
     if inizio == -1:
 
-        return ""
+        return "", []
 
     if fine == -1:
 
         fine = len(testo)
 
-    return testo[
+    sezione_testo = testo[
         inizio:fine
     ]
+
+    links = []
+
+    for link in soup.find_all("a"):
+
+        href = link.get("href")
+
+        if not href:
+            continue
+
+        if "wp-content/uploads" in href:
+
+            if href not in links:
+
+                links.append(
+                    href
+                )
+
+    return (
+        sezione_testo,
+        links
+    )
 
 
 def genera_id(sezione):
@@ -221,8 +243,10 @@ storico = carica_storico()
 
 html = scarica_pagina()
 
-sezione_bandi = estrai_bandi_aperti(
-    html
+sezione_bandi, links_bandi = (
+    estrai_bandi_aperti(
+        html
+    )
 )
 
 id_bando = genera_id(
@@ -257,8 +281,29 @@ else:
 
     messaggio = (
         "Nuovi bandi UniCamillus trovati\n\n"
-        + "\n".join(parole_trovate)
     )
+
+    messaggio += (
+        "PAROLE CHIAVE TROVATE\n"
+        "---------------------\n"
+    )
+
+    for parola in parole_trovate:
+
+        messaggio += (
+            f"- {parola}\n"
+        )
+
+    messaggio += (
+        "\nLINK AI BANDI\n"
+        "-------------\n"
+    )
+
+    for link in links_bandi:
+
+        messaggio += (
+            f"{link}\n"
+        )
 
     invia_email(
         messaggio
