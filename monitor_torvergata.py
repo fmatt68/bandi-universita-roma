@@ -4,8 +4,8 @@ from bs4 import BeautifulSoup
 
 
 URL_TORVERGATA = (
-    "http://concorsi.uniroma2.it/it/percorso/"
-    "ufficio_concorsi/sezione/procedure_personale_docente"
+    "https://web.uniroma2.it/it/percorso/"
+    "ufficio_concorsi/sezione/i_fascia"
 )
 
 
