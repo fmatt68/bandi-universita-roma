@@ -5,6 +5,7 @@ import requests
 
 from bs4 import BeautifulSoup
 from email.mime.text import MIMEText
+from urllib.parse import urljoin
 
 
 URL_UNICAMILLUS = (
@@ -78,7 +79,7 @@ def carica_storico():
                 file
             )
 
-    except:
+    except Exception:
 
         return {
             "bandi_gia_segnalati": []
@@ -171,6 +172,20 @@ def scarica_pagina():
     return risposta.text
 
 
+def normalizza_link(href):
+
+    link_assoluto = urljoin(
+        URL_UNICAMILLUS,
+        href
+    )
+
+    link_pulito = link_assoluto.split(
+        "?"
+    )[0]
+
+    return link_pulito
+
+
 def estrai_bandi_aperti(html):
 
     soup = BeautifulSoup(
@@ -235,47 +250,22 @@ def estrai_bandi_aperti(html):
                 and "privacy" not in href_lower
                 and "chiusura" not in href_lower
                 and "proroga" not in href_lower
+                and "candidati" not in href_lower
             ):
 
-                if href not in links:
+                link_pulito = normalizza_link(
+                    href
+                )
+
+                if link_pulito not in links:
 
                     links.append(
-                        href
+                        link_pulito
                     )
 
     return (
         sezione_testo,
         links
-    )
-
-
-def genera_id(sezione):
-
-    righe = []
-
-    for riga in sezione.splitlines():
-
-        riga = riga.strip()
-
-        if not riga:
-
-            continue
-
-        if (
-            "Scadenza:" in riga
-            or "SSD " in riga
-            or "GSD " in riga
-            or "Bando aperto" in riga
-            or "manifestazione di interesse" in riga.lower()
-            or "insegnamento a contratto" in riga.lower()
-        ):
-
-            righe.append(
-                riga
-            )
-
-    return "|".join(
-        righe[:30]
     )
 
 
@@ -341,12 +331,15 @@ def filtra_links_interessanti(
         if ha_trigger_contratti:
 
             if (
-                "avviso" in link_lower
-                or "manifestazione" in link_lower
+                "manifestazione" in link_lower
                 or "contratto" in link_lower
                 or "docenti-a-contratto" in link_lower
                 or "incarichi-docenti" in link_lower
                 or "incarichi" in link_lower
+                or "lista_idonei" in link_lower
+                or "lista-idonei" in link_lower
+                or "aggiornamento_lista_idonei" in link_lower
+                or "aggiornamento-lista-idonei" in link_lower
             ):
 
                 links_interessanti.append(
@@ -365,21 +358,13 @@ def filtra_links_interessanti(
                     link
                 )
 
-    if not links_interessanti:
-
-        print(
-            "ATTENZIONE: nessun link specifico trovato, uso link filtrati generici"
-        )
-
-        links_interessanti = links_bandi
-
     return links_interessanti
 
 
 def crea_messaggio_email(
     trigger_trovati,
     ssd_trovati,
-    links_interessanti
+    links_nuovi
 ):
 
     messaggio = (
@@ -411,11 +396,11 @@ def crea_messaggio_email(
             )
 
     messaggio += (
-        "\nLINK AI BANDI DI INTERESSE\n"
-        "--------------------------\n"
+        "\nLINK NUOVI SEGNALATI\n"
+        "--------------------\n"
     )
 
-    for link in links_interessanti:
+    for link in links_nuovi:
 
         messaggio += (
             f"{link}\n"
@@ -434,6 +419,13 @@ print(
 
 storico = carica_storico()
 
+gia_segnalati = set(
+    storico.get(
+        "bandi_gia_segnalati",
+        []
+    )
+)
+
 html = scarica_pagina()
 
 sezione_bandi, links_bandi = (
@@ -442,82 +434,92 @@ sezione_bandi, links_bandi = (
     )
 )
 
-id_bando = genera_id(
-    sezione_bandi
+trigger_trovati, ssd_trovati = (
+    analizza_bando(
+        sezione_bandi
+    )
 )
 
-if id_bando in storico[
-    "bandi_gia_segnalati"
-]:
+if not trigger_trovati:
 
     print(
-        "NESSUN NUOVO BANDO"
+        "NESSUN BANDO DI INTERESSE"
     )
 
 else:
 
-    trigger_trovati, ssd_trovati = (
-        analizza_bando(
-            sezione_bandi
-        )
+    print(
+        "BANDI DI INTERESSE RILEVATI\n"
     )
 
-    if not trigger_trovati:
+    for parola in trigger_trovati:
 
         print(
-            "NESSUN BANDO DI INTERESSE"
+            f"TRIGGER: {parola}"
+        )
+
+    for parola in ssd_trovati:
+
+        print(
+            f"SSD: {parola}"
+        )
+
+    links_interessanti = filtra_links_interessanti(
+        links_bandi,
+        trigger_trovati
+    )
+
+    print(
+        f"LINK INTERESSANTI TROVATI: {len(links_interessanti)}"
+    )
+
+    links_nuovi = []
+
+    for link in links_interessanti:
+
+        if link not in gia_segnalati:
+
+            links_nuovi.append(
+                link
+            )
+
+    if not links_nuovi:
+
+        print(
+            "NESSUN NUOVO BANDO"
         )
 
     else:
 
         print(
-            "NUOVI BANDI DI INTERESSE\n"
-        )
-
-        for parola in trigger_trovati:
-
-            print(
-                f"TRIGGER: {parola}"
-            )
-
-        for parola in ssd_trovati:
-
-            print(
-                f"SSD: {parola}"
-            )
-
-        links_interessanti = filtra_links_interessanti(
-            links_bandi,
-            trigger_trovati
-        )
-
-        print(
-            f"LINK INTERESSANTI TROVATI: {len(links_interessanti)}"
+            f"NUOVI LINK DA SEGNALARE: {len(links_nuovi)}"
         )
 
         messaggio = crea_messaggio_email(
             trigger_trovati,
             ssd_trovati,
-            links_interessanti
+            links_nuovi
         )
 
         invia_email(
             messaggio
         )
 
-    storico[
-        "bandi_gia_segnalati"
-    ].append(
-        id_bando
-    )
+        for link in links_nuovi:
 
-    salva_storico(
-        storico
-    )
+            storico[
+                "bandi_gia_segnalati"
+            ].append(
+                link
+            )
 
-    print(
-        "\nSTORICO AGGIORNATO"
-    )
+        salva_storico(
+            storico
+        )
+
+        print(
+            "\nSTORICO AGGIORNATO"
+        )
 
 print(
     "\n=== FINE ==="
