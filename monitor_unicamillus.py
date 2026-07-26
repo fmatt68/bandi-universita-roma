@@ -7,6 +7,23 @@ URL_UNICAMILLUS = (
     "https://unicamillus.org/lavora-con-noi/bandi-docenti/"
 )
 
+
+KEYWORDS_INTERESSE = [
+
+    "insegnamento a contratto",
+
+    "professore universitario",
+
+    "prima fascia",
+
+    "seconda fascia",
+
+    "bios-",
+
+    "meds-"
+]
+
+
 def scarica_pagina():
 
     risposta = requests.get(
@@ -21,7 +38,8 @@ def scarica_pagina():
 
     return risposta.text
 
-def analizza_pagina(html):
+
+def estrai_bandi_aperti(html):
 
     soup = BeautifulSoup(
         html,
@@ -33,20 +51,77 @@ def analizza_pagina(html):
         strip=True
     )
 
-    posizione = testo.find(
+    inizio = testo.find(
         "BANDI APERTI"
     )
 
-    print(
-        "Posizione BANDI APERTI:",
-        posizione
+    fine = testo.find(
+        "BANDI CHIUSI"
     )
 
-    if posizione != -1:
+    if inizio == -1:
 
         print(
-            testo[posizione:posizione + 3000]
+            "Sezione BANDI APERTI non trovata"
         )
+
+        return ""
+
+    if fine == -1:
+
+        fine = len(testo)
+
+    return testo[
+        inizio:fine
+    ]
+
+
+def analizza_bandi(sezione):
+
+    print(
+        "\n=== BANDI APERTI UNICAMILLUS ===\n"
+    )
+
+    print(
+        sezione
+    )
+
+    print(
+        "\n=== RISULTATO FILTRI ===\n"
+    )
+
+    sezione_minuscola = (
+        sezione.lower()
+    )
+
+    trovate = []
+
+    for parola in KEYWORDS_INTERESSE:
+
+        if parola in sezione_minuscola:
+
+            trovate.append(
+                parola
+            )
+
+    if trovate:
+
+        for elemento in trovate:
+
+            print(
+                f"TROVATO: {elemento}"
+            )
+
+    else:
+
+        print(
+            "Nessuna keyword trovata"
+        )
+
+    print(
+        "\n=== FINE ==="
+    )
+
 
 # ==========================================
 # MAIN
@@ -54,6 +129,10 @@ def analizza_pagina(html):
 
 html = scarica_pagina()
 
-analizza_pagina(
+sezione_bandi = estrai_bandi_aperti(
     html
+)
+
+analizza_bandi(
+    sezione_bandi
 )
