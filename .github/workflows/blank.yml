@@ -1,4 +1,4 @@
-name: Monitor Bandi
+name: Monitor Bandi TEST CRON
 
 on:
   schedule:
