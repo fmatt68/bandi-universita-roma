@@ -23,23 +23,43 @@ EMAIL_PASSWORD = os.getenv(
     "EMAIL_PASSWORD"
 )
 
-KEYWORDS_INTERESSE = [
-    "insegnamento a contratto",
-    "docenza a contratto",
-    "insegnamenti a contratto",
-    "docenze a contratto",
-    "manifestazione di interesse",
-    "manifestazioni di interesse",
+KEYWORDS_TRIGGER = [
+
     "prima fascia",
+
+    "manifestazione di interesse",
+
+    "manifestazioni di interesse",
+
+    "insegnamento a contratto",
+
+    "insegnamenti a contratto",
+
+    "docenza a contratto",
+
+    "docenze a contratto"
+]
+
+KEYWORDS_SSD = [
+
     "bios-",
+
     "meds-",
+
     "iinf-",
+
     "phys-",
+
     "odontoiatria",
+
     "medicina",
+
     "chirurgia",
+
     "anatomia",
+
     "patologia",
+
     "oncologia"
 ]
 
@@ -186,9 +206,7 @@ def estrai_bandi_aperti(html):
         if not href:
             continue
 
-        href_lower = (
-            href.lower()
-        )
+        href_lower = href.lower()
 
         if (
             "wp-content/uploads" in href_lower
@@ -248,21 +266,32 @@ def genera_id(sezione):
 
 def analizza_bando(sezione):
 
-    sezione_minuscola = (
-        sezione.lower()
-    )
+    testo = sezione.lower()
 
-    trovate = []
+    trigger_trovati = []
 
-    for parola in KEYWORDS_INTERESSE:
+    ssd_trovati = []
 
-        if parola in sezione_minuscola:
+    for parola in KEYWORDS_TRIGGER:
 
-            trovate.append(
+        if parola in testo:
+
+            trigger_trovati.append(
                 parola
             )
 
-    return trovate
+    for parola in KEYWORDS_SSD:
+
+        if parola in testo:
+
+            ssd_trovati.append(
+                parola
+            )
+
+    return (
+        trigger_trovati,
+        ssd_trovati
+    )
 
 
 # ==========================================
@@ -297,51 +326,78 @@ if id_bando in storico[
 
 else:
 
-    parole_trovate = (
+    trigger_trovati, ssd_trovati = (
         analizza_bando(
             sezione_bandi
         )
     )
 
-    print(
-        "NUOVI BANDI APERTI\n"
-    )
-
-    for parola in parole_trovate:
+    if not trigger_trovati:
 
         print(
-            f"TROVATO: {parola}"
+            "NESSUN BANDO DI INTERESSE"
         )
 
-    messaggio = (
-        "Nuovi bandi UniCamillus trovati\n\n"
-    )
+    else:
 
-    messaggio += (
-        "PAROLE CHIAVE TROVATE\n"
-        "---------------------\n"
-    )
+        print(
+            "NUOVI BANDI DI INTERESSE\n"
+        )
 
-    for parola in parole_trovate:
+        for parola in trigger_trovati:
+
+            print(
+                f"TRIGGER: {parola}"
+            )
+
+        for parola in ssd_trovati:
+
+            print(
+                f"SSD: {parola}"
+            )
+
+        messaggio = (
+            "Nuovi bandi UniCamillus trovati\n\n"
+        )
 
         messaggio += (
-            f"- {parola}\n"
+            "TRIGGER TROVATI\n"
+            "---------------\n"
         )
 
-    messaggio += (
-        "\nLINK AI BANDI\n"
-        "-------------\n"
-    )
+        for parola in trigger_trovati:
 
-    for link in links_bandi:
+            messaggio += (
+                f"- {parola}\n"
+            )
+
+        if ssd_trovati:
+
+            messaggio += (
+                "\nSSD TROVATI\n"
+                "-----------\n"
+            )
+
+            for parola in ssd_trovati:
+
+                messaggio += (
+                    f"- {parola}\n"
+                )
 
         messaggio += (
-            f"{link}\n"
+            "\nLINK AI BANDI\n"
+            "-------------\n"
         )
 
-    invia_email(
-        messaggio
-    )
+        for link in links_bandi:
+
+            messaggio += (
+                f"{link}\n"
+            )
+
+        invia_email(
+            messaggio
+        )
 
     storico[
         "bandi_gia_segnalati"
