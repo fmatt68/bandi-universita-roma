@@ -1,7 +1,10 @@
 import json
+import os
+import smtplib
 import requests
 
 from bs4 import BeautifulSoup
+from email.mime.text import MIMEText
 
 
 URL_UNICAMILLUS = (
@@ -12,18 +15,20 @@ FILE_STORICO = (
     "storico_unicamillus.json"
 )
 
+EMAIL_ADDRESS = os.getenv(
+    "EMAIL_ADDRESS"
+)
+
+EMAIL_PASSWORD = os.getenv(
+    "EMAIL_PASSWORD"
+)
+
 KEYWORDS_INTERESSE = [
-
     "insegnamento a contratto",
-
     "professore universitario",
-
     "prima fascia",
-
     "seconda fascia",
-
     "bios-",
-
     "meds-"
 ]
 
@@ -63,6 +68,52 @@ def salva_storico(storico):
             indent=2,
             ensure_ascii=False
         )
+
+
+def invia_email(messaggio):
+
+    if not EMAIL_ADDRESS:
+
+        print(
+            "EMAIL NON CONFIGURATA"
+        )
+
+        return
+
+    email = MIMEText(
+        messaggio,
+        "plain",
+        "utf-8"
+    )
+
+    email["Subject"] = (
+        "[UNICAMILLUS] Nuovi bandi"
+    )
+
+    email["From"] = EMAIL_ADDRESS
+    email["To"] = EMAIL_ADDRESS
+
+    server = smtplib.SMTP(
+        "smtp.gmail.com",
+        587
+    )
+
+    server.starttls()
+
+    server.login(
+        EMAIL_ADDRESS,
+        EMAIL_PASSWORD
+    )
+
+    server.send_message(
+        email
+    )
+
+    server.quit()
+
+    print(
+        "EMAIL INVIATA"
+    )
 
 
 def scarica_pagina():
@@ -122,7 +173,6 @@ def genera_id(sezione):
         riga = riga.strip()
 
         if not riga:
-
             continue
 
         if (
@@ -204,6 +254,15 @@ else:
         print(
             f"TROVATO: {parola}"
         )
+
+    messaggio = (
+        "Nuovi bandi UniCamillus trovati\n\n"
+        + "\n".join(parole_trovate)
+    )
+
+    invia_email(
+        messaggio
+    )
 
     storico[
         "bandi_gia_segnalati"
