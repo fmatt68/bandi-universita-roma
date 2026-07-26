@@ -23,7 +23,6 @@ EMAIL_PASSWORD = os.getenv(
     "EMAIL_PASSWORD"
 )
 
-
 KEYWORDS_INTERESSE = [
     "insegnamento a contratto",
     "docenza a contratto",
@@ -31,7 +30,6 @@ KEYWORDS_INTERESSE = [
     "docenze a contratto",
     "manifestazione di interesse",
     "manifestazioni di interesse",
-    "professore universitario",
     "prima fascia",
     "bios-",
     "meds-",
@@ -104,6 +102,7 @@ def invia_email(messaggio):
     )
 
     email["From"] = EMAIL_ADDRESS
+
     email["To"] = EMAIL_ADDRESS
 
     server = smtplib.SMTP(
@@ -180,18 +179,40 @@ def estrai_bandi_aperti(html):
 
     for link in soup.find_all("a"):
 
-        href = link.get("href")
+        href = link.get(
+            "href"
+        )
 
         if not href:
             continue
 
-        if "wp-content/uploads" in href:
+        href_lower = (
+            href.lower()
+        )
 
-            if href not in links:
+        if (
+            "wp-content/uploads" in href_lower
+            and (
+                "bando" in href_lower
+                or "avviso" in href_lower
+            )
+        ):
 
-                links.append(
-                    href
-                )
+            if (
+                "verbale" not in href_lower
+                and "commissione" not in href_lower
+                and "convocazione" not in href_lower
+                and "regolarita" not in href_lower
+                and "argoment" not in href_lower
+                and "allegati" not in href_lower
+                and "privacy" not in href_lower
+            ):
+
+                if href not in links:
+
+                    links.append(
+                        href
+                    )
 
     return (
         sezione_testo,
