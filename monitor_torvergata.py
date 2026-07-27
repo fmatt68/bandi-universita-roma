@@ -2,17 +2,23 @@ import json
 import os
 import re
 import smtplib
+
 from datetime import date, datetime
 from email.mime.text import MIMEText
 from urllib.parse import urljoin
 
 import requests
+
 from bs4 import BeautifulSoup
 
 
-BASE_URL = "https://web.uniroma2.it"
+BASE_URL = (
+    "https://web.uniroma2.it"
+)
 
-FILE_STORICO = "storico_torvergata.json"
+FILE_STORICO = (
+    "storico_torvergata.json"
+)
 
 EMAIL_ADDRESS = os.getenv(
     "EMAIL_ADDRESS"
@@ -37,7 +43,9 @@ PAGINE_I_FASCIA = [
         )
     },
     {
-        "nome": "Art. 18, comma 1",
+        "nome": (
+            "Art. 18, comma 1"
+        ),
         "url": (
             "https://web.uniroma2.it/it/percorso/"
             "ufficio_concorsi/sezione/"
@@ -45,7 +53,9 @@ PAGINE_I_FASCIA = [
         )
     },
     {
-        "nome": "Art. 18, comma 4",
+        "nome": (
+            "Art. 18, comma 4"
+        ),
         "url": (
             "https://web.uniroma2.it/it/percorso/"
             "ufficio_concorsi/sezione/"
@@ -53,7 +63,9 @@ PAGINE_I_FASCIA = [
         )
     },
     {
-        "nome": "Art. 18, comma 4-ter",
+        "nome": (
+            "Art. 18, comma 4-ter"
+        ),
         "url": (
             "https://web.uniroma2.it/it/percorso/"
             "ufficio_concorsi/sezione/"
@@ -61,7 +73,9 @@ PAGINE_I_FASCIA = [
         )
     },
     {
-        "nome": "Art. 24, comma 6",
+        "nome": (
+            "Art. 24, comma 6"
+        ),
         "url": (
             "https://web.uniroma2.it/it/percorso/"
             "ufficio_concorsi/sezione/"
@@ -100,6 +114,31 @@ KEYWORDS_AREA = [
 ]
 
 
+INIZI_TITOLO_AMMESSI = [
+    "procedura comparativa",
+    "procedura valutativa",
+    "procedura per",
+    "avviso pubblico"
+]
+
+
+PAROLE_DA_ESCLUDERE = [
+    "commissione esaminatrice",
+    "nomina commissione",
+    "decreto di nomina",
+    "approvazione atti",
+    "regolarità degli atti",
+    "regolarita degli atti",
+    "verbale",
+    "convocazione",
+    "esito",
+    "graduatoria",
+    "rinuncia",
+    "chiusura",
+    "proroga commissione"
+]
+
+
 def carica_storico():
 
     try:
@@ -120,10 +159,17 @@ def carica_storico():
         ):
 
             raise ValueError(
-                "Formato dello storico non valido"
+                "Formato storico non valido"
             )
 
-        if "bandi_gia_segnalati" not in storico:
+        bandi = storico.get(
+            "bandi_gia_segnalati"
+        )
+
+        if not isinstance(
+            bandi,
+            list
+        ):
 
             storico[
                 "bandi_gia_segnalati"
@@ -158,9 +204,436 @@ def salva_storico(storico):
         )
 
 
-def invia_email(
-    bandi_nuovi
+def scarica_pagina(url):
+
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 "
+            "(compatible; MonitorBandi/1.0)"
+        )
+    }
+
+    risposta = requests.get(
+        url,
+        headers=headers,
+        timeout=60
+    )
+
+    risposta.raise_for_status()
+
+    print(
+        "Pagina letta:",
+        risposta.url
+    )
+
+    return risposta.text
+
+
+def normalizza_testo(testo):
+
+    return " ".join(
+        testo.split()
+    )
+
+
+def normalizza_link(href):
+
+    link = urljoin(
+        BASE_URL,
+        href
+    )
+
+    link = link.split(
+        "#"
+    )[0]
+
+    return link
+
+
+def titolo_da_escludere(titolo):
+
+    titolo_lower = titolo.lower()
+
+    return any(
+        parola in titolo_lower
+        for parola in PAROLE_DA_ESCLUDERE
+    )
+
+
+def e_titolo_di_procedura(titolo):
+
+    titolo_lower = titolo.lower()
+
+    if titolo_da_escludere(
+        titolo
+    ):
+
+        return False
+
+    if not any(
+        titolo_lower.startswith(
+            inizio
+        )
+        for inizio in INIZI_TITOLO_AMMESSI
+    ):
+
+        return False
+
+    indicatori_prima_fascia = [
+        "prima fascia",
+        " i fascia",
+        "professore universitario di ruolo di prima fascia",
+        "professore universitario di prima fascia"
+    ]
+
+    return any(
+        indicatore in titolo_lower
+        for indicatore in indicatori_prima_fascia
+    )
+
+
+def contiene_area_interesse(testo):
+
+    testo_lower = testo.lower()
+
+    return any(
+        parola in testo_lower
+        for parola in KEYWORDS_AREA
+    )
+
+
+def estrai_data_scadenza(testo):
+
+    pattern = re.compile(
+        r"scadenza\s*"
+        r"(\d{1,2}/\d{1,2}/\d{4})",
+        re.IGNORECASE
+    )
+
+    corrispondenza = pattern.search(
+        testo
+    )
+
+    if not corrispondenza:
+
+        return (
+            None,
+            "Scadenza non individuata"
+        )
+
+    data_testo = corrispondenza.group(
+        1
+    )
+
+    try:
+
+        data_scadenza = datetime.strptime(
+            data_testo,
+            "%d/%m/%Y"
+        ).date()
+
+    except ValueError:
+
+        return (
+            None,
+            data_testo
+        )
+
+    return (
+        data_scadenza,
+        data_testo
+    )
+
+
+def trova_riga_procedura(elemento):
+
+    riga = elemento.find_parent(
+        "tr"
+    )
+
+    if riga is not None:
+
+        return riga
+
+    selettori = [
+        "views-row",
+        "view-row",
+        "item-list",
+        "card",
+        "row"
+    ]
+
+    nodo = elemento.parent
+
+    for _ in range(6):
+
+        if nodo is None:
+
+            break
+
+        classi = nodo.get(
+            "class",
+            []
+        )
+
+        classi_testo = " ".join(
+            classi
+        ).lower()
+
+        if any(
+            selettore in classi_testo
+            for selettore in selettori
+        ):
+
+            testo_nodo = normalizza_testo(
+                nodo.get_text(
+                    " ",
+                    strip=True
+                )
+            )
+
+            if (
+                "scadenza" in testo_nodo.lower()
+                and len(testo_nodo) < 5000
+            ):
+
+                return nodo
+
+        nodo = nodo.parent
+
+    return None
+
+
+def estrai_scadenza_da_dettaglio(url):
+
+    try:
+
+        html = scarica_pagina(
+            url
+        )
+
+        soup = BeautifulSoup(
+            html,
+            "html.parser"
+        )
+
+        testo = normalizza_testo(
+            soup.get_text(
+                " ",
+                strip=True
+            )
+        )
+
+        return estrai_data_scadenza(
+            testo
+        )
+
+    except Exception as errore:
+
+        print(
+            "Impossibile leggere il dettaglio:",
+            url
+        )
+
+        print(
+            str(
+                errore
+            )
+        )
+
+        return (
+            None,
+            "Scadenza non individuata"
+        )
+
+
+def estrai_procedure_da_pagina(
+    nome_sezione,
+    html
 ):
+
+    soup = BeautifulSoup(
+        html,
+        "html.parser"
+    )
+
+    procedure = []
+    links_visti = set()
+
+    for elemento in soup.find_all(
+        "a",
+        href=True
+    ):
+
+        href = elemento.get(
+            "href"
+        )
+
+        titolo = normalizza_testo(
+            elemento.get_text(
+                " ",
+                strip=True
+            )
+        )
+
+        if not titolo:
+
+            continue
+
+        link = normalizza_link(
+            href
+        )
+
+        if (
+            "/it/contenuto/" not in link
+        ):
+
+            continue
+
+        if link in links_visti:
+
+            continue
+
+        if not e_titolo_di_procedura(
+            titolo
+        ):
+
+            continue
+
+        if not contiene_area_interesse(
+            titolo
+        ):
+
+            continue
+
+        riga = trova_riga_procedura(
+            elemento
+        )
+
+        if riga is not None:
+
+            testo_riga = normalizza_testo(
+                riga.get_text(
+                    " ",
+                    strip=True
+                )
+            )
+
+            data_scadenza, scadenza_testo = (
+                estrai_data_scadenza(
+                    testo_riga
+                )
+            )
+
+        else:
+
+            data_scadenza = None
+
+            scadenza_testo = (
+                "Scadenza non individuata"
+            )
+
+        if data_scadenza is None:
+
+            print(
+                "Scadenza non trovata nella riga, "
+                "apro il dettaglio:",
+                link
+            )
+
+            data_scadenza, scadenza_testo = (
+                estrai_scadenza_da_dettaglio(
+                    link
+                )
+            )
+
+        links_visti.add(
+            link
+        )
+
+        procedure.append(
+            {
+                "sezione": nome_sezione,
+                "titolo": titolo,
+                "link": link,
+                "data_scadenza": data_scadenza,
+                "scadenza_testo": scadenza_testo
+            }
+        )
+
+    return procedure
+
+
+def procedura_ancora_aperta(procedura):
+
+    data_scadenza = procedura[
+        "data_scadenza"
+    ]
+
+    if data_scadenza is None:
+
+        print(
+            "IGNORATA: scadenza non individuata:",
+            procedura["link"]
+        )
+
+        return False
+
+    if data_scadenza < date.today():
+
+        return False
+
+    return True
+
+
+def raccogli_procedure():
+
+    tutte_le_procedure = []
+
+    for pagina in PAGINE_I_FASCIA:
+
+        print(
+            "\nControllo sezione:",
+            pagina["nome"]
+        )
+
+        try:
+
+            html = scarica_pagina(
+                pagina["url"]
+            )
+
+            procedure = estrai_procedure_da_pagina(
+                pagina["nome"],
+                html
+            )
+
+            print(
+                "Procedure pertinenti trovate:",
+                len(procedure)
+            )
+
+            tutte_le_procedure.extend(
+                procedure
+            )
+
+        except Exception as errore:
+
+            print(
+                "ERRORE NELLA SEZIONE:",
+                pagina["nome"]
+            )
+
+            print(
+                str(
+                    errore
+                )
+            )
+
+    return tutte_le_procedure
+
+
+def invia_email(bandi_nuovi):
 
     if not EMAIL_ADDRESS:
 
@@ -182,9 +655,9 @@ def invia_email(
         "Nuovi bandi Tor Vergata trovati",
         "",
         (
-            "Sono state individuate nuove procedure "
-            "di I fascia ancora aperte e appartenenti "
-            "alle aree di interesse."
+            "Nuove procedure di I fascia, "
+            "ancora aperte e appartenenti "
+            "alle aree di interesse:"
         ),
         ""
     ]
@@ -279,315 +752,6 @@ def invia_email(
     return True
 
 
-def scarica_pagina(url):
-
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 "
-            "(compatible; MonitorBandi/1.0)"
-        )
-    }
-
-    risposta = requests.get(
-        url,
-        headers=headers,
-        timeout=60
-    )
-
-    risposta.raise_for_status()
-
-    print(
-        "Pagina letta:",
-        risposta.url
-    )
-
-    return risposta.text
-
-
-def normalizza_testo(testo):
-
-    return " ".join(
-        testo.split()
-    )
-
-
-def normalizza_link(href):
-
-    link = urljoin(
-        BASE_URL,
-        href
-    )
-
-    return link.split(
-        "#"
-    )[0]
-
-
-def contiene_area_interesse(
-    testo
-):
-
-    testo_lower = testo.lower()
-
-    return any(
-        parola in testo_lower
-        for parola in KEYWORDS_AREA
-    )
-
-
-def e_procedura_prima_fascia(
-    titolo
-):
-
-    titolo_lower = titolo.lower()
-
-    indicatori = [
-        "prima fascia",
-        "i fascia",
-        "professore universitario di ruolo di prima fascia",
-        "professore universitario di prima fascia"
-    ]
-
-    return any(
-        indicatore in titolo_lower
-        for indicatore in indicatori
-    )
-
-
-def estrai_data_scadenza(
-    testo
-):
-
-    pattern = re.compile(
-        r"scadenza\s+"
-        r"(\d{1,2}/\d{1,2}/\d{4})",
-        re.IGNORECASE
-    )
-
-    corrispondenza = pattern.search(
-        testo
-    )
-
-    if not corrispondenza:
-
-        return None, "Scadenza non individuata"
-
-    data_testo = corrispondenza.group(
-        1
-    )
-
-    try:
-
-        data_scadenza = datetime.strptime(
-            data_testo,
-            "%d/%m/%Y"
-        ).date()
-
-    except ValueError:
-
-        return None, data_testo
-
-    return (
-        data_scadenza,
-        data_testo
-    )
-
-
-def trova_contenitore_procedura(
-    elemento_link
-):
-
-    nodo = elemento_link
-
-    for _ in range(8):
-
-        if nodo is None:
-
-            break
-
-        testo_nodo = nodo.get_text(
-            " ",
-            strip=True
-        )
-
-        testo_lower = testo_nodo.lower()
-
-        if (
-            "scadenza" in testo_lower
-            and (
-                "prima fascia" in testo_lower
-                or "professore universitario" in testo_lower
-            )
-        ):
-
-            return nodo
-
-        nodo = nodo.parent
-
-    return elemento_link.parent
-
-
-def estrai_procedure_da_pagina(
-    nome_sezione,
-    html
-):
-
-    soup = BeautifulSoup(
-        html,
-        "html.parser"
-    )
-
-    procedure = []
-    links_visti = set()
-
-    for elemento in soup.find_all(
-        "a",
-        href=True
-    ):
-
-        href = elemento.get(
-            "href"
-        )
-
-        titolo = normalizza_testo(
-            elemento.get_text(
-                " ",
-                strip=True
-            )
-        )
-
-        if not titolo:
-
-            continue
-
-        link_completo = normalizza_link(
-            href
-        )
-
-        if (
-            "/it/contenuto/" not in link_completo
-        ):
-
-            continue
-
-        if link_completo in links_visti:
-
-            continue
-
-        if not e_procedura_prima_fascia(
-            titolo
-        ):
-
-            continue
-
-        contenitore = trova_contenitore_procedura(
-            elemento
-        )
-
-        testo_completo = normalizza_testo(
-            contenitore.get_text(
-                " ",
-                strip=True
-            )
-        )
-
-        if not contiene_area_interesse(
-            titolo + " " + testo_completo
-        ):
-
-            continue
-
-        data_scadenza, scadenza_testo = (
-            estrai_data_scadenza(
-                testo_completo
-            )
-        )
-
-        links_visti.add(
-            link_completo
-        )
-
-        procedure.append(
-            {
-                "sezione": nome_sezione,
-                "titolo": titolo,
-                "link": link_completo,
-                "data_scadenza": data_scadenza,
-                "scadenza_testo": scadenza_testo
-            }
-        )
-
-    return procedure
-
-
-def procedura_ancora_aperta(
-    procedura
-):
-
-    data_scadenza = procedura[
-        "data_scadenza"
-    ]
-
-    if data_scadenza is None:
-
-        print(
-            "SCADENZA NON INDIVIDUATA, "
-            "procedura ignorata:",
-            procedura["link"]
-        )
-
-        return False
-
-    return data_scadenza >= date.today()
-
-
-def raccogli_procedure():
-
-    tutte_le_procedure = []
-
-    for pagina in PAGINE_I_FASCIA:
-
-        print(
-            "\nControllo sezione:",
-            pagina["nome"]
-        )
-
-        try:
-
-            html = scarica_pagina(
-                pagina["url"]
-            )
-
-            procedure = estrai_procedure_da_pagina(
-                pagina["nome"],
-                html
-            )
-
-            print(
-                "Procedure di area trovate:",
-                len(procedure)
-            )
-
-            tutte_le_procedure.extend(
-                procedure
-            )
-
-        except Exception as errore:
-
-            print(
-                "ERRORE NELLA SEZIONE:",
-                pagina["nome"]
-            )
-
-            print(
-                str(
-                    errore
-                )
-            )
-
-    return tutte_le_procedure
-
-
 # ==========================================
 # MAIN
 # ==========================================
@@ -607,6 +771,19 @@ gia_segnalati = set(
 
 procedure = raccogli_procedure()
 
+procedure_uniche = {}
+
+for procedura in procedure:
+
+    procedure_uniche[
+        procedura["link"]
+    ] = procedura
+
+procedure = list(
+    procedure_uniche.values()
+)
+
+
 procedure_aperte = []
 
 for procedura in procedure:
@@ -620,17 +797,11 @@ for procedura in procedure:
         )
 
 
-procedure_uniche = {}
-
-for procedura in procedure_aperte:
-
-    procedure_uniche[
-        procedura["link"]
-    ] = procedura
-
-
-procedure_aperte = list(
-    procedure_uniche.values()
+procedure_aperte.sort(
+    key=lambda elemento: (
+        elemento["data_scadenza"],
+        elemento["titolo"]
+    )
 )
 
 
@@ -646,7 +817,12 @@ for procedura in procedure_aperte:
 
 
 print(
-    "\nProcedure aperte di interesse:",
+    "\nProcedure pertinenti complessive:",
+    len(procedure)
+)
+
+print(
+    "Procedure aperte di interesse:",
     len(procedure_aperte)
 )
 
