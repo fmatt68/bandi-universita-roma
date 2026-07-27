@@ -1,7 +1,11 @@
-import requests
+import json
+import re
 
-from bs4 import BeautifulSoup
+from html import unescape
 from urllib.parse import urljoin
+
+import requests
+from bs4 import BeautifulSoup
 
 
 BASE_URL = (
@@ -61,21 +65,21 @@ PAGINE_UNICAMPUS = [
 ]
 
 
-PAROLE_LINK_UTILI = [
-    "prima fascia",
-    "i fascia",
-    "selettiva i fascia",
-    "valutativa i fascia",
-    "docente a contratto",
-    "docenti a contratto",
-    "insegnamento",
-    "didattica",
-    "manifestazione di interesse",
-    "manifestazioni di interesse",
-    "incarico",
-    "bando",
-    "avviso",
-    "ord/"
+PAROLE_DIAGNOSTICHE = [
+    "/concorso/",
+    "wp-json",
+    "admin-ajax",
+    "ajax",
+    "graphql",
+    "loadmore",
+    "load-more",
+    "in-atto",
+    "in_atto",
+    "ordinamento",
+    "ord/01_26",
+    "ord/02_26",
+    "meds-13",
+    "bios-11"
 ]
 
 
@@ -84,7 +88,17 @@ def scarica_pagina(url):
     headers = {
         "User-Agent": (
             "Mozilla/5.0 "
-            "(compatible; MonitorBandi/1.0)"
+            "(X11; Linux x86_64) "
+            "AppleWebKit/537.36 "
+            "(KHTML, like Gecko) "
+            "Chrome/126.0 Safari/537.36"
+        ),
+        "Accept": (
+            "text/html,application/xhtml+xml,"
+            "application/xml;q=0.9,*/*;q=0.8"
+        ),
+        "Accept-Language": (
+            "it-IT,it;q=0.9,en;q=0.8"
         )
     }
 
@@ -104,118 +118,325 @@ def scarica_pagina(url):
         risposta.url
     )
 
+    print(
+        "Dimensione HTML:",
+        len(risposta.text)
+    )
+
     risposta.raise_for_status()
 
     return risposta.text
 
 
-def normalizza_testo(testo):
+def normalizza_link(link):
 
-    return " ".join(
-        testo.split()
+    link = unescape(
+        link
     )
 
+    link = link.replace(
+        "\\/",
+        "/"
+    )
 
-def normalizza_link(href):
-
-    link = urljoin(
+    return urljoin(
         BASE_URL,
-        href
+        link
     )
 
-    link = link.split(
-        "#"
-    )[0]
 
-    return link
+def estrai_link_concorso(html):
 
+    links = []
 
-def estrai_sezione_in_atto(testo):
+    pattern_links = [
+        r"""https?://[^"'\\\s]+/concorso/[^"'\\\s<]+""",
+        r"""[^"']*/concorso/[^"']+["']""",
+        r"""\\?[^"']*\\/concorso\\/[^"']+\\?["']"""
+    ]
 
-    testo_lower = testo.lower()
+    for pattern in pattern_links:
 
-    posizione_inizio = testo_lower.find(
-        "in atto"
-    )
-
-    if posizione_inizio == -1:
-
-        return ""
-
-    posizione_fine = testo_lower.find(
-        "conclusi",
-        posizione_inizio
-    )
-
-    if posizione_fine == -1:
-
-        posizione_fine = len(
-            testo
+        risultati = re.findall(
+            pattern,
+            html,
+            flags=re.IGNORECASE
         )
 
-    return testo[
-        posizione_inizio:posizione_fine
-    ]
+        for risultato in risultati:
+
+            if isinstance(
+                risultato,
+                tuple
+            ):
+
+                risultato = risultato[0]
+
+            link = normalizza_link(
+                risultato
+            )
+
+            link = link.rstrip(
+                "\\"
+            )
+
+            if link not in links:
+
+                links.append(
+                    link
+                )
+
+    return links
 
 
-def link_potenzialmente_utile(
-    titolo,
-    href
+def stampa_elemento_in_atto(
+    soup
 ):
 
-    titolo_lower = titolo.lower()
-
-    href_lower = href.lower()
-
-    if "/ateneo/concorsi/" not in href_lower:
-
-        return False
-
-    pagine_generali = [
-        "/ateneo/concorsi/",
-        "/ateneo/concorsi/professori-i-e-ii-"
-        "procedure-selettive/",
-        "/ateneo/concorsi/professori-i-e-ii-"
-        "procedure-valutative/",
-        "/ateneo/concorsi/docenti-a-contratto/",
-        "/ateneo/concorsi/manifestazioni-di-interesse/",
-        "/ateneo/concorsi/manifestazioni-di-interesse-"
-        "foundation-year/"
-    ]
-
-    percorso = href_lower.split(
-        "?"
-    )[0]
-
-    if percorso in pagine_generali:
-
-        return False
-
-    return any(
-        parola in titolo_lower
-        or parola in href_lower
-        for parola in PAROLE_LINK_UTILI
+    trovati = soup.find_all(
+        string=re.compile(
+            r"^\s*In atto\s*$",
+            re.IGNORECASE
+        )
     )
+
+    print(
+        "\nELEMENTI HTML CONTENENTI 'IN ATTO':",
+        len(trovati)
+    )
+
+    for indice, testo in enumerate(
+        trovati[:3],
+        start=1
+    ):
+
+        print(
+            f"\n--- ELEMENTO IN ATTO {indice} ---"
+        )
+
+        nodo = testo.parent
+
+        print(
+            str(nodo)[:3000]
+        )
+
+        print(
+            "\n--- CONTENITORE PADRE ---"
+        )
+
+        if nodo.parent is not None:
+
+            print(
+                str(nodo.parent)[:5000]
+            )
+
+
+def stampa_script_utili(
+    soup
+):
+
+    print(
+        "\nSCRIPT POTENZIALMENTE UTILI:\n"
+    )
+
+    totale = 0
+
+    for script in soup.find_all(
+        "script"
+    ):
+
+        sorgente = script.get(
+            "src",
+            ""
+        )
+
+        contenuto = script.string or ""
+
+        testo_script = (
+            sorgente
+            + " "
+            + contenuto
+        )
+
+        testo_lower = testo_script.lower()
+
+        if not any(
+            parola in testo_lower
+            for parola in [
+                "ajax",
+                "concorso",
+                "concorsi",
+                "load",
+                "filter",
+                "wp-json",
+                "api"
+            ]
+        ):
+
+            continue
+
+        totale += 1
+
+        print(
+            "SRC:",
+            sorgente
+        )
+
+        if contenuto:
+
+            print(
+                "CONTENUTO:",
+                contenuto[:2000]
+            )
+
+        print()
+
+    print(
+        "TOTALE SCRIPT UTILI:",
+        totale
+    )
+
+
+def stampa_iframe(
+    soup
+):
+
+    iframe = soup.find_all(
+        "iframe"
+    )
+
+    print(
+        "\nIFRAME TROVATI:",
+        len(iframe)
+    )
+
+    for elemento in iframe:
+
+        print(
+            "SRC:",
+            elemento.get(
+                "src"
+            )
+        )
+
+
+def stampa_attributi_data(
+    soup
+):
+
+    risultati = []
+
+    for elemento in soup.find_all(
+        True
+    ):
+
+        attributi_data = {
+            nome: valore
+            for nome, valore in elemento.attrs.items()
+            if nome.startswith(
+                "data-"
+            )
+        }
+
+        if not attributi_data:
+
+            continue
+
+        testo_attributi = json.dumps(
+            attributi_data,
+            ensure_ascii=False,
+            default=str
+        ).lower()
+
+        if not any(
+            parola in testo_attributi
+            for parola in [
+                "concor",
+                "ajax",
+                "load",
+                "filter",
+                "atto",
+                "post"
+            ]
+        ):
+
+            continue
+
+        risultati.append(
+            {
+                "tag": elemento.name,
+                "attributi": attributi_data
+            }
+        )
+
+    print(
+        "\nATTRIBUTI DATA POTENZIALMENTE UTILI:",
+        len(risultati)
+    )
+
+    for risultato in risultati[:30]:
+
+        print(
+            "TAG:",
+            risultato["tag"]
+        )
+
+        print(
+            "ATTRIBUTI:",
+            risultato["attributi"]
+        )
+
+        print()
+
+
+def cerca_parole_html(
+    html
+):
+
+    html_lower = html.lower()
+
+    print(
+        "\nRICERCA PAROLE NELL'HTML GREZZO:\n"
+    )
+
+    for parola in PAROLE_DIAGNOSTICHE:
+
+        posizione = html_lower.find(
+            parola.lower()
+        )
+
+        print(
+            f"{parola}:",
+            posizione
+        )
+
+        if posizione != -1:
+
+            inizio = max(
+                0,
+                posizione - 300
+            )
+
+            fine = min(
+                len(html),
+                posizione + 1000
+            )
+
+            print(
+                html[inizio:fine]
+            )
+
+            print()
 
 
 def analizza_pagina(
     nome,
-    url,
     html
 ):
 
     soup = BeautifulSoup(
         html,
         "html.parser"
-    )
-
-    testo = soup.get_text(
-        "\n",
-        strip=True
-    )
-
-    sezione_in_atto = estrai_sezione_in_atto(
-        testo
     )
 
     print(
@@ -228,99 +449,42 @@ def analizza_pagina(
     )
 
     print(
-        "========================================\n"
+        "========================================"
     )
 
-    if sezione_in_atto:
-
-        print(
-            "CONTENUTO DELLA SEZIONE IN ATTO:\n"
-        )
-
-        print(
-            sezione_in_atto[:6000]
-        )
-
-    else:
-
-        print(
-            "SEZIONE IN ATTO NON INDIVIDUATA"
-        )
-
-        print(
-            "\nPRIMI 3000 CARATTERI DELLA PAGINA:\n"
-        )
-
-        print(
-            testo[:3000]
-        )
-
-    print(
-        "\nLINK POTENZIALMENTE UTILI:\n"
+    links_concorso = estrai_link_concorso(
+        html
     )
 
-    links_trovati = []
-
-    for elemento in soup.find_all(
-        "a",
-        href=True
-    ):
-
-        href = elemento.get(
-            "href"
-        )
-
-        titolo = normalizza_testo(
-            elemento.get_text(
-                " ",
-                strip=True
-            )
-        )
-
-        if not href:
-
-            continue
-
-        link_completo = normalizza_link(
-            href
-        )
-
-        if not titolo:
-
-            continue
-
-        if not link_potenzialmente_utile(
-            titolo,
-            link_completo
-        ):
-
-            continue
-
-        if link_completo in links_trovati:
-
-            continue
-
-        links_trovati.append(
-            link_completo
-        )
-
-        print(
-            "TITOLO:",
-            titolo
-        )
-
-        print(
-            "LINK:",
-            link_completo
-        )
-
-        print()
-
     print(
-        "TOTALE LINK POTENZIALMENTE UTILI:",
-        len(
-            links_trovati
+        "\nLINK /concorso/ TROVATI:",
+        len(links_concorso)
+    )
+
+    for link in links_concorso[:50]:
+
+        print(
+            link
         )
+
+    stampa_elemento_in_atto(
+        soup
+    )
+
+    stampa_iframe(
+        soup
+    )
+
+    stampa_attributi_data(
+        soup
+    )
+
+    stampa_script_utili(
+        soup
+    )
+
+    cerca_parole_html(
+        html
     )
 
 
@@ -329,7 +493,7 @@ def analizza_pagina(
 # ==========================================
 
 print(
-    "\n=== TEST MONITOR CAMPUS BIO-MEDICO ===\n"
+    "\n=== DIAGNOSTICA CAMPUS BIO-MEDICO ===\n"
 )
 
 for pagina in PAGINE_UNICAMPUS:
@@ -347,7 +511,6 @@ for pagina in PAGINE_UNICAMPUS:
 
         analizza_pagina(
             pagina["nome"],
-            pagina["url"],
             html
         )
 
@@ -365,5 +528,5 @@ for pagina in PAGINE_UNICAMPUS:
         )
 
 print(
-    "\n=== FINE TEST CAMPUS BIO-MEDICO ===\n"
+    "\n=== FINE DIAGNOSTICA CAMPUS BIO-MEDICO ===\n"
 )
