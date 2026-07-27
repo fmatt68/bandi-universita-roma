@@ -33,7 +33,7 @@ PAGINE_I_FASCIA = [
     {
         "nome": (
             "Art. 7, commi 5-bis e 5-ter "
-            "- Chiamata per mobilità"
+            "- Chiamata per mobilita"
         ),
         "url": (
             "https://web.uniroma2.it/it/percorso/"
@@ -85,35 +85,6 @@ PAGINE_I_FASCIA = [
 ]
 
 
-KEYWORDS_AREA = [
-    "meds-",
-    "medf-",
-    "bios-",
-    "mvet-",
-    "iinf-",
-    "phys-",
-    "bio/",
-    "med/",
-    "vet/",
-    "fis/",
-    "ing-inf/",
-    "biologia",
-    "biomedicina",
-    "medicina",
-    "scienze cliniche",
-    "scienze chirurgiche",
-    "chirurgia",
-    "anatomia",
-    "patologia",
-    "oncologia",
-    "fisiologia",
-    "biochimica",
-    "microbiologia",
-    "immunologia",
-    "odontoiatria"
-]
-
-
 INIZI_TITOLO_AMMESSI = [
     "procedura comparativa",
     "procedura valutativa",
@@ -127,8 +98,8 @@ PAROLE_DA_ESCLUDERE = [
     "nomina commissione",
     "decreto di nomina",
     "approvazione atti",
-    "regolarità degli atti",
     "regolarita degli atti",
+    "regolarità degli atti",
     "verbale",
     "convocazione",
     "esito",
@@ -136,6 +107,33 @@ PAROLE_DA_ESCLUDERE = [
     "rinuncia",
     "chiusura",
     "proroga commissione"
+]
+
+
+PATTERN_SETTORI_INTERESSE = [
+    r"\b\d{2}/meds-\d{2}\b",
+    r"\bmeds-\d{2}/[a-z]\b",
+
+    r"\b\d{2}/medf-\d{2}\b",
+    r"\bmedf-\d{2}/[a-z]\b",
+
+    r"\b\d{2}/bios-\d{2}\b",
+    r"\bbios-\d{2}/[a-z]\b",
+
+    r"\b\d{2}/mvet-\d{2}\b",
+    r"\bmvet-\d{2}/[a-z]\b",
+
+    r"\b\d{2}/iinf-\d{2}\b",
+    r"\biinf-\d{2}/[a-z]\b",
+
+    r"\b\d{2}/phys-\d{2}\b",
+    r"\bphys-\d{2}/[a-z]\b",
+
+    r"\bbio/\d{2}\b",
+    r"\bmed/\d{2}\b",
+    r"\bvet/\d{2}\b",
+    r"\bfis/\d{2}\b",
+    r"\bing-inf/\d{2}\b"
 ]
 
 
@@ -297,47 +295,92 @@ def contiene_area_interesse(testo):
     testo_lower = testo.lower()
 
     return any(
-        parola in testo_lower
-        for parola in KEYWORDS_AREA
+        re.search(
+            pattern,
+            testo_lower
+        )
+        for pattern in PATTERN_SETTORI_INTERESSE
     )
+
+
+def estrai_codici_area(testo):
+
+    testo_lower = testo.lower()
+
+    codici = []
+
+    for pattern in PATTERN_SETTORI_INTERESSE:
+
+        corrispondenze = re.findall(
+            pattern,
+            testo_lower
+        )
+
+        for codice in corrispondenze:
+
+            codice_maiuscolo = codice.upper()
+
+            if codice_maiuscolo not in codici:
+
+                codici.append(
+                    codice_maiuscolo
+                )
+
+    return codici
 
 
 def estrai_data_scadenza(testo):
 
-    pattern = re.compile(
+    pattern_scadenza = re.compile(
         r"scadenza\s*"
         r"(\d{1,2}/\d{1,2}/\d{4})",
         re.IGNORECASE
     )
 
-    corrispondenza = pattern.search(
+    corrispondenze = pattern_scadenza.findall(
         testo
     )
 
-    if not corrispondenza:
+    if not corrispondenze:
 
         return (
             None,
             "Scadenza non individuata"
         )
 
-    data_testo = corrispondenza.group(
-        1
-    )
+    date_valide = []
 
-    try:
+    for data_testo in corrispondenze:
 
-        data_scadenza = datetime.strptime(
-            data_testo,
-            "%d/%m/%Y"
-        ).date()
+        try:
 
-    except ValueError:
+            data_scadenza = datetime.strptime(
+                data_testo,
+                "%d/%m/%Y"
+            ).date()
+
+            date_valide.append(
+                (
+                    data_scadenza,
+                    data_testo
+                )
+            )
+
+        except ValueError:
+
+            continue
+
+    if not date_valide:
 
         return (
             None,
-            data_testo
+            "Scadenza non individuata"
         )
+
+    data_scadenza, data_testo = max(
+        date_valide,
+        key=lambda elemento: elemento[0]
+    )
 
     return (
         data_scadenza,
@@ -353,7 +396,16 @@ def trova_riga_procedura(elemento):
 
     if riga is not None:
 
-        return riga
+        testo_riga = normalizza_testo(
+            riga.get_text(
+                " ",
+                strip=True
+            )
+        )
+
+        if "scadenza" in testo_riga.lower():
+
+            return riga
 
     selettori = [
         "views-row",
@@ -380,24 +432,23 @@ def trova_riga_procedura(elemento):
             classi
         ).lower()
 
-        if any(
-            selettore in classi_testo
-            for selettore in selettori
+        testo_nodo = normalizza_testo(
+            nodo.get_text(
+                " ",
+                strip=True
+            )
+        )
+
+        if (
+            any(
+                selettore in classi_testo
+                for selettore in selettori
+            )
+            and "scadenza" in testo_nodo.lower()
+            and len(testo_nodo) < 5000
         ):
 
-            testo_nodo = normalizza_testo(
-                nodo.get_text(
-                    " ",
-                    strip=True
-                )
-            )
-
-            if (
-                "scadenza" in testo_nodo.lower()
-                and len(testo_nodo) < 5000
-            ):
-
-                return nodo
+            return nodo
 
         nodo = nodo.parent
 
@@ -458,6 +509,7 @@ def estrai_procedure_da_pagina(
     )
 
     procedure = []
+
     links_visti = set()
 
     for elemento in soup.find_all(
@@ -505,6 +557,10 @@ def estrai_procedure_da_pagina(
         ):
 
             continue
+
+        codici_area = estrai_codici_area(
+            titolo
+        )
 
         riga = trova_riga_procedura(
             elemento
@@ -556,6 +612,7 @@ def estrai_procedure_da_pagina(
                 "sezione": nome_sezione,
                 "titolo": titolo,
                 "link": link,
+                "codici_area": codici_area,
                 "data_scadenza": data_scadenza,
                 "scadenza_testo": scadenza_testo
             }
@@ -657,7 +714,7 @@ def invia_email(bandi_nuovi):
         (
             "Nuove procedure di I fascia, "
             "ancora aperte e appartenenti "
-            "alle aree di interesse:"
+            "alle aree disciplinari di interesse:"
         ),
         ""
     ]
@@ -686,6 +743,15 @@ def invia_email(bandi_nuovi):
         righe.append(
             f"Scadenza: {bando['scadenza_testo']}"
         )
+
+        if bando["codici_area"]:
+
+            righe.append(
+                "Area: "
+                + ", ".join(
+                    bando["codici_area"]
+                )
+            )
 
         righe.append("")
 
@@ -720,6 +786,7 @@ def invia_email(bandi_nuovi):
     )
 
     email["From"] = EMAIL_ADDRESS
+
     email["To"] = EMAIL_ADDRESS
 
     server = smtplib.SMTP(
@@ -771,6 +838,7 @@ gia_segnalati = set(
 
 procedure = raccogli_procedure()
 
+
 procedure_uniche = {}
 
 for procedura in procedure:
@@ -778,6 +846,7 @@ for procedura in procedure:
     procedure_uniche[
         procedura["link"]
     ] = procedura
+
 
 procedure = list(
     procedure_uniche.values()
@@ -848,6 +917,13 @@ else:
 
         print(
             bando["titolo"]
+        )
+
+        print(
+            "Area:",
+            ", ".join(
+                bando["codici_area"]
+            )
         )
 
         print(
