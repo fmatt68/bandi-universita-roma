@@ -697,35 +697,49 @@ def trova_url_ajax(
     )
 
 
+
 def trova_section_ajax(html):
 
-    pattern = re.compile(
-        r"""[^'"]+['"]""",
-        re.IGNORECASE
-    )
+    patterns = [
+        re.compile(
+            r"""[^'"]+['"]""",
+            re.IGNORECASE
+        ),
+        re.compile(
+            r"""section\s*:\s*[^'"]+['"]""",
+            re.IGNORECASE
+        )
+    ]
 
-    corrispondenza = pattern.search(
-        html
-    )
+    for pattern in patterns:
 
-    if not corrispondenza:
-
-        print(
-            "Parametro section AJAX non individuato"
+        corrispondenza = pattern.search(
+            html
         )
 
-        return None
+        if corrispondenza is None:
 
-    valore_section = corrispondenza.group(
-        1
-    )
+            continue
+
+        valore_section = corrispondenza.group(
+            1
+        )
+
+        print(
+            "Parametro section AJAX:",
+            valore_section
+        )
+
+        return valore_section
 
     print(
-        "Parametro section AJAX:",
-        valore_section
+        "Parametro section AJAX non individuato. "
+        "Il monitor userà la pagina principale."
     )
 
-    return valore_section
+    return None
+
+
 
 
 def scarica_pagine_ajax(
