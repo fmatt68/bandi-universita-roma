@@ -46,6 +46,9 @@ jobs:
         env:
           EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+
+      - name: Test Gemelli IRCCS
+        run: python monitor_gemelli.py
         
       - name: Commit storico aggiornato
         run: |
@@ -57,6 +60,7 @@ jobs:
           git add storico_torvergata.json
           git add storico_unicampus.json
           git add storico_cattolica.json
+          git add storico_gemelli.json
 
           git diff --staged --quiet || git commit -m "Aggiorna storico.json"
 
