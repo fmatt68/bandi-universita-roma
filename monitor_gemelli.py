@@ -700,8 +700,11 @@ def trova_url_ajax(
 def trova_section_ajax(html):
 
     pattern = re.compile(
-        r"""['"]section['"]\s*:\s*['"]([^'"]+)['"]"""
-pattern.search(
+        r"""[^'"]+['"]""",
+        re.IGNORECASE
+    )
+
+    corrispondenza = pattern.search(
         html
     )
 
