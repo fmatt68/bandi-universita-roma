@@ -1,9 +1,13 @@
+import json
+import os
 import re
-import requests
+import smtplib
 
 from datetime import date, datetime
+from email.mime.text import MIMEText
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
+import requests
 from bs4 import BeautifulSoup
 
 
@@ -13,6 +17,18 @@ BASE_URL = (
 
 URL_CARRIERE = (
     "https://policlinicogemelli.intervieweb.it/it/career"
+)
+
+FILE_STORICO = (
+    "storico_gemelli.json"
+)
+
+EMAIL_ADDRESS = os.getenv(
+    "EMAIL_ADDRESS"
+)
+
+EMAIL_PASSWORD = os.getenv(
+    "EMAIL_PASSWORD"
 )
 
 
@@ -46,41 +62,89 @@ PAROLE_DOCENZA_CONTRATTO = [
 PAROLE_AREA_BIOMEDICA = [
     "biologo",
     "biologa",
+    "biologi",
+    "biologhe",
     "biologia",
     "biomedicina",
     "biomedico",
     "biomedica",
+    "biomedici",
+    "biomediche",
+    "biotecnologo",
+    "biotecnologa",
+    "biotecnologi",
     "biotecnologie",
-    "ricerca",
-    "ricercatore",
-    "ricercatrice",
-    "laboratorio",
-    "medico",
-    "medica",
-    "medicina",
-    "chirurgia",
-    "neurochirurgia",
-    "oncologia",
-    "ematologia",
-    "cardiologia",
+    "biochimica",
+    "bioinformatica",
+    "genetica",
+    "genomica",
+    "proteomica",
     "microbiologia",
     "immunologia",
     "farmacologia",
-    "patologia",
-    "genetica",
-    "genomica",
-    "bioinformatica",
-    "data scientist",
-    "clinical trial",
-    "sperimentazione clinica",
-    "epidemiologia",
-    "malattie infettive",
-    "diagnostica",
-    "radiologia",
     "fisiologia",
-    "nutrizione",
-    "psicologia",
+    "patologia",
+    "patologia generale",
+    "patologia clinica",
+    "laboratorio",
+    "laboratorio biomedico",
+    "laboratorio di ricerca",
+    "ricerca biomedica",
+    "ricerca clinica",
+    "ricerca scientifica",
+    "ricercatore",
+    "ricercatrice",
+    "clinical trial",
+    "clinical research",
+    "trial clinico",
+    "trial clinici",
+    "sperimentazione clinica",
+    "studi clinici",
+    "studio clinico",
+    "epidemiologia",
+    "biostatistica",
+    "data scientist",
+    "data science",
+    "biobanca",
+    "biobanking",
+    "biomarcatori",
+    "biomarkers",
+    "malattie infettive",
+    "hiv",
+    "oncologia",
+    "ematologia",
+    "cardiologia",
     "neuroscienze",
+    "neurobiologia",
+    "neurochirurgia",
+    "diagnostica",
+    "diagnostica per immagini",
+    "radiologia",
+    "radioterapia",
+    "medicina nucleare",
+    "medico",
+    "medica",
+    "medici",
+    "medicina",
+    "chirurgia",
+    "anestesia",
+    "anestesiologia",
+    "rianimazione",
+    "pediatria",
+    "nutrizione",
+    "fisioterapia",
+    "psicologia clinica",
+    "infermiere",
+    "infermiera",
+    "infermieri",
+    "infermieristica",
+    "professioni sanitarie",
+    "tecnico sanitario",
+    "tecnica sanitaria",
+    "tecnico di laboratorio",
+    "tecnica di laboratorio",
+    "tecnico di radiologia",
+    "tecnica di radiologia",
     "meds-",
     "medf-",
     "bios-",
@@ -92,6 +156,29 @@ PAROLE_AREA_BIOMEDICA = [
     "vet/",
     "fis/",
     "ing-inf/"
+]
+
+
+PAROLE_RUOLO_AMMINISTRATIVO = [
+    "segreteria",
+    "assistente amministrativo",
+    "assistente amministrativa",
+    "addetto amministrativo",
+    "addetta amministrativa",
+    "amministrazione",
+    "contabilità",
+    "contabilita",
+    "risorse umane",
+    "ufficio acquisti",
+    "reception",
+    "centralino",
+    "front office",
+    "back office",
+    "customer care",
+    "ufficio legale",
+    "marketing",
+    "comunicazione",
+    "fundraising"
 ]
 
 
@@ -107,25 +194,53 @@ PAROLE_TEMPO_INDETERMINATO = [
 ]
 
 
-PAROLE_CONTRATTO_TEMPORANEO = [
+PAROLE_TEMPO_DETERMINATO = [
     "tempo determinato",
     "contratto a tempo determinato",
+    "contratto di lavoro a tempo determinato",
+    "rapporto di lavoro a tempo determinato",
+    "fixed-term contract",
+    "fixed term contract"
+]
+
+
+PAROLE_COCOCO = [
     "collaborazione coordinata e continuativa",
     "co.co.co",
     "co.co.co.",
-    "cococo",
+    "cococo"
+]
+
+
+PAROLE_LIBERO_PROFESSIONALE = [
     "libero professionale",
     "libera professione",
-    "partita iva",
+    "contratto libero professionale",
+    "contratto di libera professione",
+    "partita iva"
+]
+
+
+PAROLE_BORSA = [
     "borsa di studio",
-    "borsista",
+    "borse di studio",
+    "borsista"
+]
+
+
+PAROLE_STAGE = [
     "stage",
     "tirocinio",
-    "servizio civile",
-    "contratto di collaborazione",
-    "contratto occasionale",
+    "internship"
+]
+
+
+PAROLE_ALTRI_CONTRATTI = [
+    "apprendistato",
     "somministrazione",
-    "apprendistato"
+    "contratto occasionale",
+    "collaborazione occasionale",
+    "servizio civile"
 ]
 
 
@@ -137,6 +252,71 @@ PAROLE_DA_ESCLUDERE = [
     "cookie",
     "informativa"
 ]
+
+
+def carica_storico():
+
+    try:
+
+        with open(
+            FILE_STORICO,
+            "r",
+            encoding="utf-8"
+        ) as file:
+
+            storico = json.load(
+                file
+            )
+
+        if not isinstance(
+            storico,
+            dict
+        ):
+
+            raise ValueError(
+                "Formato storico non valido"
+            )
+
+        offerte = storico.get(
+            "offerte_gia_segnalate"
+        )
+
+        if not isinstance(
+            offerte,
+            list
+        ):
+
+            storico[
+                "offerte_gia_segnalate"
+            ] = []
+
+        return storico
+
+    except (
+        FileNotFoundError,
+        json.JSONDecodeError,
+        ValueError
+    ):
+
+        return {
+            "offerte_gia_segnalate": []
+        }
+
+
+def salva_storico(storico):
+
+    with open(
+        FILE_STORICO,
+        "w",
+        encoding="utf-8"
+    ) as file:
+
+        json.dump(
+            storico,
+            file,
+            indent=2,
+            ensure_ascii=False
+        )
 
 
 def crea_sessione():
@@ -175,17 +355,12 @@ def scarica_pagina(
         timeout=60
     )
 
-    print(
-        "Status code:",
-        risposta.status_code
-    )
+    risposta.raise_for_status()
 
     print(
         "Pagina letta:",
         risposta.url
     )
-
-    risposta.raise_for_status()
 
     return risposta.text
 
@@ -232,6 +407,14 @@ def contiene_parola(
     )
 
 
+def contiene_docenza(testo):
+
+    return contiene_parola(
+        testo,
+        PAROLE_DOCENZA_CONTRATTO
+    )
+
+
 def contiene_area_biomedica(testo):
 
     return contiene_parola(
@@ -240,12 +423,38 @@ def contiene_area_biomedica(testo):
     )
 
 
-def contiene_docenza(testo):
+def titolo_amministrativo(titolo):
 
     return contiene_parola(
-        testo,
-        PAROLE_DOCENZA_CONTRATTO
+        titolo,
+        PAROLE_RUOLO_AMMINISTRATIVO
     )
+
+
+def e_offerta_pertinente(
+    titolo,
+    testo_completo
+):
+
+    docenza = contiene_docenza(
+        testo_completo
+    )
+
+    area_biomedica = contiene_area_biomedica(
+        testo_completo
+    )
+
+    if docenza:
+
+        return True
+
+    if titolo_amministrativo(
+        titolo
+    ):
+
+        return False
+
+    return area_biomedica
 
 
 def classifica_contratto(testo):
@@ -257,22 +466,58 @@ def classifica_contratto(testo):
         for parola in PAROLE_TEMPO_INDETERMINATO
     ):
 
-        return "TEMPO INDETERMINATO"
+        return "Tempo indeterminato"
 
     if any(
         parola in testo_lower
-        for parola in PAROLE_CONTRATTO_TEMPORANEO
+        for parola in PAROLE_TEMPO_DETERMINATO
     ):
 
-        return "CONTRATTO TEMPORANEO O NON PRIORITARIO"
+        return "Tempo determinato"
 
-    return "CONTRATTO NON SPECIFICATO"
+    if any(
+        parola in testo_lower
+        for parola in PAROLE_COCOCO
+    ):
+
+        return "Collaborazione coordinata e continuativa"
+
+    if any(
+        parola in testo_lower
+        for parola in PAROLE_LIBERO_PROFESSIONALE
+    ):
+
+        return "Contratto libero-professionale"
+
+    if any(
+        parola in testo_lower
+        for parola in PAROLE_BORSA
+    ):
+
+        return "Borsa di studio"
+
+    if any(
+        parola in testo_lower
+        for parola in PAROLE_STAGE
+    ):
+
+        return "Stage o tirocinio"
+
+    if any(
+        parola in testo_lower
+        for parola in PAROLE_ALTRI_CONTRATTI
+    ):
+
+        return "Altra forma contrattuale"
+
+    return "Contratto non specificato"
 
 
 def estrai_scadenza(testo):
 
     pattern = re.compile(
-        r"scadenza(?:\s+presentazione\s+domanda)?"
+        r"scadenza"
+        r"(?:\s+presentazione\s+domanda)?"
         r"\s*:?\s*"
         r"(\d{1,2}/\d{1,2}/\d{4})",
         re.IGNORECASE
@@ -293,9 +538,11 @@ def estrai_scadenza(testo):
                 "%d/%m/%Y"
             ).date()
 
-            date_valide.append(
-                data_scadenza
-            )
+            if data_scadenza not in date_valide:
+
+                date_valide.append(
+                    data_scadenza
+                )
 
         except ValueError:
 
@@ -305,7 +552,7 @@ def estrai_scadenza(testo):
 
         return (
             None,
-            "Scadenza non individuata"
+            "Scadenza non specificata"
         )
 
     date_future = [
@@ -331,6 +578,28 @@ def estrai_scadenza(testo):
         data_scadenza.strftime(
             "%d/%m/%Y"
         )
+    )
+
+
+def estrai_data_pubblicazione(testo):
+
+    pattern = re.compile(
+        r"data\s+di\s+pubblicazione"
+        r"\s*:?\s*"
+        r"(\d{1,2}/\d{1,2}/\d{4})",
+        re.IGNORECASE
+    )
+
+    corrispondenza = pattern.search(
+        testo
+    )
+
+    if not corrispondenza:
+
+        return "Data di pubblicazione non specificata"
+
+    return corrispondenza.group(
+        1
     )
 
 
@@ -384,7 +653,12 @@ def estrai_annunci(
 
             continue
 
-        if link not in annunci:
+        if (
+            link not in annunci
+            or len(titolo) > len(
+                annunci[link]["titolo"]
+            )
+        ):
 
             annunci[
                 link
@@ -392,14 +666,6 @@ def estrai_annunci(
                 "titolo": titolo,
                 "link": link
             }
-
-        elif len(titolo) > len(
-            annunci[link]["titolo"]
-        ):
-
-            annunci[
-                link
-            ]["titolo"] = titolo
 
     return list(
         annunci.values()
@@ -431,119 +697,97 @@ def trova_url_ajax(
     )
 
 
-def estrai_pagine_html(
-    soup
-):
+def trova_section_ajax(html):
 
-    links = []
+    pattern = re.compile(
+        r"""['"]section['"]\s*:\s*['"]([^'"]+)['"]"""
+pattern.search(
+        html
+    )
 
-    for elemento in soup.find_all(
-        "a",
-        href=True
-    ):
+    if not corrispondenza:
 
-        href = elemento.get(
-            "href"
-        )
+        return None
 
-        testo = normalizza_testo(
-            elemento.get_text(
-                " ",
-                strip=True
-            )
-        )
-
-        if not href:
-
-            continue
-
-        link = normalizza_link(
-            href
-        )
-
-        testo_completo = (
-            testo
-            + " "
-            + link
-        ).lower()
-
-        if (
-            "page=2" in testo_completo
-            or "pagina 2" in testo_completo
-        ):
-
-            if link not in links:
-
-                links.append(
-                    link
-                )
-
-    return links
+    return corrispondenza.group(
+        1
+    )
 
 
-def prova_pagina_due(
+def scarica_pagine_ajax(
     sessione,
-    soup
+    html_principale
 ):
 
-    urls = estrai_pagine_html(
+    soup = BeautifulSoup(
+        html_principale,
+        "html.parser"
+    )
+
+    url_ajax = trova_url_ajax(
         soup
     )
 
-    urls_candidate = [
-        URL_CARRIERE + "?page=2",
-        URL_CARRIERE + "?p=2",
-        URL_CARRIERE + "/2"
-    ]
+    section = trova_section_ajax(
+        html_principale
+    )
 
-    for url in urls_candidate:
+    if not url_ajax:
 
-        if url not in urls:
+        print(
+            "URL AJAX non individuato, "
+            "uso soltanto la pagina principale"
+        )
 
-            urls.append(
-                url
-            )
+        return []
 
-    annunci_pagina_due = []
+    if not section:
 
-    for url in urls:
+        print(
+            "Parametro section non individuato, "
+            "uso soltanto la pagina principale"
+        )
+
+        return []
+
+    annunci_extra = []
+
+    links_precedenti = set()
+
+    for pagina in range(
+        2,
+        11
+    ):
+
+        dati = {
+            "act1": "vacancyListCareer",
+            "section": section,
+            "order": "",
+            "page": pagina,
+            "country": "",
+            "region": "",
+            "function": "",
+            "project": "",
+            "text": "",
+            "division": "",
+            "company": ""
+        }
 
         try:
 
-            risposta = sessione.get(
-                url,
+            risposta = sessione.post(
+                url_ajax,
+                data=dati,
                 timeout=60
             )
 
-            if risposta.status_code != 200:
-
-                continue
-
-            annunci = estrai_annunci(
-                risposta.text
-            )
-
-            if annunci:
-
-                print(
-                    "Possibile pagina aggiuntiva:",
-                    risposta.url
-                )
-
-                print(
-                    "Annunci trovati:",
-                    len(annunci)
-                )
-
-                annunci_pagina_due.extend(
-                    annunci
-                )
+            risposta.raise_for_status()
 
         except Exception as errore:
 
             print(
-                "Errore tentativo pagina aggiuntiva:",
-                url
+                "Errore durante il caricamento "
+                f"della pagina AJAX {pagina}:"
             )
 
             print(
@@ -552,7 +796,82 @@ def prova_pagina_due(
                 )
             )
 
-    return annunci_pagina_due
+            break
+
+        annunci_pagina = estrai_annunci(
+            risposta.text
+        )
+
+        links_pagina = {
+            annuncio["link"]
+            for annuncio in annunci_pagina
+        }
+
+        links_nuovi = (
+            links_pagina
+            - links_precedenti
+        )
+
+        print(
+            f"Pagina AJAX {pagina}:",
+            len(annunci_pagina),
+            "annunci"
+        )
+
+        if not annunci_pagina:
+
+            break
+
+        if not links_nuovi:
+
+            break
+
+        annunci_extra.extend(
+            annunci_pagina
+        )
+
+        links_precedenti.update(
+            links_pagina
+        )
+
+    return annunci_extra
+
+
+def estrai_descrizione(
+    soup,
+    testo_completo
+):
+
+    selettori = [
+        ".vacancy-description",
+        ".job-description",
+        ".description",
+        ".announce-description",
+        "[itemprop='description']"
+    ]
+
+    for selettore in selettori:
+
+        elemento = soup.select_one(
+            selettore
+        )
+
+        if elemento is None:
+
+            continue
+
+        testo = normalizza_testo(
+            elemento.get_text(
+                " ",
+                strip=True
+            )
+        )
+
+        if testo:
+
+            return testo[:1800]
+
+    return testo_completo[:1800]
 
 
 def analizza_dettaglio(
@@ -598,11 +917,11 @@ def analizza_dettaglio(
         "titolo"
     ]
 
-    intestazione = soup.find(
+    intestazioni = soup.find_all(
         ["h1", "h2"]
     )
 
-    if intestazione is not None:
+    for intestazione in intestazioni:
 
         titolo_intestazione = normalizza_testo(
             intestazione.get_text(
@@ -610,6 +929,17 @@ def analizza_dettaglio(
                 strip=True
             )
         )
+
+        if not titolo_intestazione:
+
+            continue
+
+        if (
+            "fondazione policlinico" in
+            titolo_intestazione.lower()
+        ):
+
+            continue
 
         if len(
             titolo_intestazione
@@ -627,17 +957,12 @@ def analizza_dettaglio(
         + annuncio["link"]
     )
 
-    area_biomedica = contiene_area_biomedica(
+    if not e_offerta_pertinente(
+        titolo,
         testo_completo
-    )
+    ):
 
-    docenza = contiene_docenza(
-        testo_completo
-    )
-
-    contratto = classifica_contratto(
-        testo_completo
-    )
+        return None
 
     data_scadenza, scadenza_testo = (
         estrai_scadenza(
@@ -648,13 +973,197 @@ def analizza_dettaglio(
     return {
         "titolo": titolo,
         "link": annuncio["link"],
-        "area_biomedica": area_biomedica,
-        "docenza": docenza,
-        "contratto": contratto,
+        "area_biomedica": contiene_area_biomedica(
+            testo_completo
+        ),
+        "docenza": contiene_docenza(
+            testo_completo
+        ),
+        "contratto": classifica_contratto(
+            testo_completo
+        ),
+        "data_pubblicazione": estrai_data_pubblicazione(
+            testo_completo
+        ),
         "data_scadenza": data_scadenza,
         "scadenza_testo": scadenza_testo,
-        "testo": testo
+        "descrizione": estrai_descrizione(
+            soup,
+            testo
+        )
     }
+
+
+def offerta_attiva(
+    offerta
+):
+
+    data_scadenza = offerta[
+        "data_scadenza"
+    ]
+
+    if data_scadenza is None:
+
+        return True
+
+    return data_scadenza >= date.today()
+
+
+def invia_email(
+    offerte_nuove
+):
+
+    if not EMAIL_ADDRESS:
+
+        print(
+            "EMAIL NON CONFIGURATA"
+        )
+
+        return False
+
+    if not EMAIL_PASSWORD:
+
+        print(
+            "EMAIL_PASSWORD NON CONFIGURATA"
+        )
+
+        return False
+
+    righe = [
+        "Nuove opportunità Gemelli IRCCS",
+        "",
+        (
+            "Sono state individuate nuove opportunità "
+            "biomediche, scientifiche, sanitarie "
+            "o didattiche."
+        ),
+        "",
+        (
+            "La tipologia contrattuale è riportata "
+            "come informazione e non costituisce "
+            "un criterio di esclusione."
+        ),
+        ""
+    ]
+
+    for numero, offerta in enumerate(
+        offerte_nuove,
+        start=1
+    ):
+
+        righe.append(
+            "========================================"
+        )
+
+        righe.append(
+            f"OFFERTA {numero}"
+        )
+
+        righe.append(
+            "========================================"
+        )
+
+        righe.append(
+            f"Contratto: {offerta['contratto']}"
+        )
+
+        righe.append(
+            "Pubblicazione: "
+            + offerta["data_pubblicazione"]
+        )
+
+        righe.append(
+            f"Scadenza: {offerta['scadenza_testo']}"
+        )
+
+        righe.append(
+            "Area biomedica/scientifica: "
+            + (
+                "Sì"
+                if offerta["area_biomedica"]
+                else "No"
+            )
+        )
+
+        righe.append(
+            "Docenza/insegnamento: "
+            + (
+                "Sì"
+                if offerta["docenza"]
+                else "No"
+            )
+        )
+
+        righe.append("")
+
+        righe.append(
+            offerta["titolo"]
+        )
+
+        righe.append("")
+
+        righe.append(
+            offerta["descrizione"]
+        )
+
+        righe.append("")
+
+        righe.append(
+            "Link all'offerta:"
+        )
+
+        righe.append(
+            offerta["link"]
+        )
+
+        righe.append("")
+
+    messaggio = "\n".join(
+        righe
+    )
+
+    email = MIMEText(
+        messaggio,
+        "plain",
+        "utf-8"
+    )
+
+    email["Subject"] = (
+        "[GEMELLI IRCCS] Nuove opportunità"
+    )
+
+    email["From"] = EMAIL_ADDRESS
+
+    email["To"] = EMAIL_ADDRESS
+
+    server = smtplib.SMTP(
+        "smtp.gmail.com",
+        587,
+        timeout=60
+    )
+
+    try:
+
+        server.starttls()
+
+        server.login(
+            EMAIL_ADDRESS,
+            EMAIL_PASSWORD
+        )
+
+        server.send_message(
+            email
+        )
+
+    finally:
+
+        server.quit()
+
+    print(
+        "EMAIL INVIATA"
+    )
+
+    return True
 
 
 # ==========================================
@@ -662,37 +1171,32 @@ def analizza_dettaglio(
 # ==========================================
 
 print(
-    "\n=== DIAGNOSTICA DETTAGLI GEMELLI IRCCS ===\n"
+    "\n=== MONITOR GEMELLI IRCCS ===\n"
 )
 
 sessione = crea_sessione()
 
-html = scarica_pagina(
+storico = carica_storico()
+
+gia_segnalate = set(
+    storico.get(
+        "offerte_gia_segnalate",
+        []
+    )
+)
+
+html_principale = scarica_pagina(
     sessione,
     URL_CARRIERE
 )
 
-soup = BeautifulSoup(
-    html,
-    "html.parser"
-)
-
-url_ajax = trova_url_ajax(
-    soup
-)
-
-print(
-    "\nURL AJAX ANNUNCI:",
-    url_ajax
-)
-
 annunci = estrai_annunci(
-    html
+    html_principale
 )
 
-annunci_extra = prova_pagina_due(
+annunci_extra = scarica_pagine_ajax(
     sessione,
-    soup
+    html_principale
 )
 
 annunci_unici = {}
@@ -713,31 +1217,14 @@ annunci = list(
 
 
 print(
-    "\nANNUNCI UNICI DA ANALIZZARE:",
+    "\nAnnunci complessivi individuati:",
     len(annunci)
 )
 
 
-dettagli_interessanti = []
+offerte_pertinenti = []
 
 for annuncio in annunci:
-
-    testo_preliminare = (
-        annuncio["titolo"]
-        + " "
-        + annuncio["link"]
-    )
-
-    if not (
-        contiene_area_biomedica(
-            testo_preliminare
-        )
-        or contiene_docenza(
-            testo_preliminare
-        )
-    ):
-
-        continue
 
     dettaglio = analizza_dettaglio(
         sessione,
@@ -748,78 +1235,136 @@ for annuncio in annunci:
 
         continue
 
-    if not (
-        dettaglio["area_biomedica"]
-        or dettaglio["docenza"]
-    ):
-
-        continue
-
-    dettagli_interessanti.append(
+    offerte_pertinenti.append(
         dettaglio
     )
 
 
-print(
-    "\nDETTAGLI BIOMEDICI O DI DOCENZA:",
-    len(dettagli_interessanti)
+offerte_uniche = {}
+
+for offerta in offerte_pertinenti:
+
+    offerte_uniche[
+        offerta["link"]
+    ] = offerta
+
+
+offerte_pertinenti = list(
+    offerte_uniche.values()
 )
 
 
-for numero, dettaglio in enumerate(
-    dettagli_interessanti,
-    start=1
-):
-
-    print(
-        "\n========================================"
+offerte_attive = [
+    offerta
+    for offerta in offerte_pertinenti
+    if offerta_attiva(
+        offerta
     )
+]
 
-    print(
-        "OFFERTA:",
-        numero
-    )
 
-    print(
-        "========================================"
-    )
-
-    print(
-        "TITOLO:",
-        dettaglio["titolo"]
-    )
-
-    print(
-        "AREA BIOMEDICA:",
-        dettaglio["area_biomedica"]
-    )
-
-    print(
-        "DOCENZA/INSEGNAMENTO:",
-        dettaglio["docenza"]
-    )
-
-    print(
-        "CONTRATTO:",
-        dettaglio["contratto"]
-    )
-
-    print(
-        "SCADENZA:",
-        dettaglio["scadenza_testo"]
-    )
-
-    print(
-        "LINK:",
-        dettaglio["link"]
-    )
-
-    print(
-        "TESTO DETTAGLIO:",
-        dettaglio["testo"][:2500]
-    )
+offerte_nuove = [
+    offerta
+    for offerta in offerte_attive
+    if offerta["link"] not in gia_segnalate
+]
 
 
 print(
-    "\n=== FINE DIAGNOSTICA DETTAGLI GEMELLI IRCCS ==="
+    "Offerte pertinenti:",
+    len(offerte_pertinenti)
+)
+
+print(
+    "Offerte attive:",
+    len(offerte_attive)
+)
+
+print(
+    "Nuove offerte da segnalare:",
+    len(offerte_nuove)
+)
+
+
+if not offerte_nuove:
+
+    print(
+        "NESSUNA NUOVA OFFERTA"
+    )
+
+else:
+
+    for offerta in offerte_nuove:
+
+        print(
+            "\nNUOVA OFFERTA:"
+        )
+
+        print(
+            "Titolo:",
+            offerta["titolo"]
+        )
+
+        print(
+            "Contratto:",
+            offerta["contratto"]
+        )
+
+        print(
+            "Pubblicazione:",
+            offerta["data_pubblicazione"]
+        )
+
+        print(
+            "Scadenza:",
+            offerta["scadenza_testo"]
+        )
+
+        print(
+            "Area biomedica:",
+            offerta["area_biomedica"]
+        )
+
+        print(
+            "Docenza:",
+            offerta["docenza"]
+        )
+
+        print(
+            "Link:",
+            offerta["link"]
+        )
+
+    email_inviata = invia_email(
+        offerte_nuove
+    )
+
+    if email_inviata:
+
+        for offerta in offerte_nuove:
+
+            storico[
+                "offerte_gia_segnalate"
+            ].append(
+                offerta["link"]
+            )
+
+        salva_storico(
+            storico
+        )
+
+        print(
+            "\nSTORICO GEMELLI AGGIORNATO"
+        )
+
+    else:
+
+        print(
+            "Storico non aggiornato perché "
+            "l'email non è stata inviata"
+        )
+
+
+print(
+    "\n=== FINE MONITOR GEMELLI IRCCS ==="
 )
