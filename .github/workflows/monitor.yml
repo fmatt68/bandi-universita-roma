@@ -49,7 +49,10 @@ jobs:
 
       - name: Test Gemelli IRCCS
         run: python monitor_gemelli.py
-        
+        env:
+          EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+
       - name: Commit storico aggiornato
         run: |
           git config --global user.name "github-actions"
