@@ -1,17 +1,32 @@
+import json
+import os
 import re
+import smtplib
+
+from datetime import date, datetime
+from email.mime.text import MIMEText
+from urllib.parse import unquote, urljoin, urlsplit, urlunsplit
+
 import requests
-
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin, urlsplit, urlunsplit
+from bs4.element import NavigableString, Tag
 
 
-BASE_URL = (
-    "https://progetti.unicatt.it"
-)
+BASE_URL = "https://progetti.unicatt.it"
 
 URL_INDICE_ROMA = (
     "https://progetti.unicatt.it/"
     "progetti-ateneo-concorsi-roma"
+)
+
+FILE_STORICO = "storico_cattolica.json"
+
+EMAIL_ADDRESS = os.getenv(
+    "EMAIL_ADDRESS"
+)
+
+EMAIL_PASSWORD = os.getenv(
+    "EMAIL_PASSWORD"
 )
 
 
@@ -61,12 +76,11 @@ PAROLE_PAGINA_DOCENZA = [
     "conferimento di insegnamenti",
     "incarichi di insegnamento",
     "incarico di insegnamento",
-    "bandi conferimento incarichi",
-    "copertura discipline",
     "docenti a contratto",
     "docente a contratto",
+    "professore a contratto",
     "professori a contratto",
-    "professore a contratto"
+    "copertura discipline"
 ]
 
 
@@ -75,8 +89,18 @@ PAROLE_PRIMA_FASCIA = [
     "i fascia",
     "professore universitario di prima fascia",
     "professore di ruolo di prima fascia",
-    "posti di professore di ruolo di prima fascia",
-    "posto di professore di ruolo di prima fascia"
+    "professori di ruolo di prima fascia",
+    "posto di professore di ruolo di prima fascia",
+    "posti di professore di ruolo di prima fascia"
+]
+
+
+PAROLE_SECONDA_FASCIA = [
+    "seconda fascia",
+    "ii fascia",
+    "professore universitario di seconda fascia",
+    "professore di ruolo di seconda fascia",
+    "professori di ruolo di seconda fascia"
 ]
 
 
@@ -95,71 +119,154 @@ PAROLE_DOCENZA_CONTRATTO = [
     "conferimento di insegnamenti",
     "conferimento insegnamento",
     "conferimento insegnamenti",
-    "bando conferimento incarichi",
-    "bandi conferimento incarichi",
     "contratto di insegnamento",
     "contratti di insegnamento",
-    "attivita didattica",
-    "attività didattica",
-    "didattica integrativa",
     "incarico di docenza",
     "incarichi di docenza",
+    "didattica integrativa",
+    "attivita didattica",
+    "attività didattica",
     "scuola di specializzazione",
     "scuole di specializzazione"
 ]
 
 
+PAROLE_DOCUMENTO_PRINCIPALE = [
+    "bando",
+    "procedura di valutazione",
+    "procedura selettiva",
+    "decreto rettorale",
+    "decreto rettorale n.",
+    "avviso di selezione",
+    "selezione per titoli"
+]
+
+
+PAROLE_DOCUMENTO_ACCESSORIO = [
+    "domanda di incarico",
+    "domanda di ammissione",
+    "allegato",
+    "elenco discipline",
+    "indicatori anvur",
+    "modulo",
+    "fac-simile",
+    "fac simile",
+    "informativa privacy",
+    "regolamento",
+    "disposizioni operative"
+]
+
+
 PAROLE_DA_ESCLUDERE = [
-    "seconda fascia",
-    "ii fascia",
-    "revoca",
     "commissione",
     "nomina commissione",
+    "verbale",
     "approvazione atti",
     "approvazione degli atti",
-    "verbale",
     "graduatoria",
     "esito",
-    "regolamento",
-    "modulo",
-    "allegato",
     "rinuncia",
-    "convocazione"
+    "revoca",
+    "procedura conclusa",
+    "procedura chiusa"
 ]
 
 
-PATTERN_SETTORI_INTERESSE = [
-    r"\b\d{2}/MEDS-\d{2}\b",
-    r"\bMEDS-\d{2}/[A-Z]\b",
-
-    r"\b\d{2}/MEDF-\d{2}\b",
-    r"\bMEDF-\d{2}/[A-Z]\b",
-
-    r"\b\d{2}/BIOS-\d{2}\b",
-    r"\bBIOS-\d{2}/[A-Z]\b",
-
-    r"\b\d{2}/MVET-\d{2}\b",
-    r"\bMVET-\d{2}/[A-Z]\b",
-
-    r"\b\d{2}/IINF-\d{2}\b",
-    r"\bIINF-\d{2}/[A-Z]\b",
-
-    r"\b\d{2}/PHYS-\d{2}\b",
-    r"\bPHYS-\d{2}/[A-Z]\b",
-
-    r"\bBIO/\d{2}\b",
-    r"\bMED/\d{2}\b",
-    r"\bVET/\d{2}\b",
-    r"\bFIS/\d{2}\b",
-    r"\bING-INF/\d{2}\b"
+PREFISSI_AREA_INTERESSE = [
+    "MEDS",
+    "MEDF",
+    "BIOS",
+    "MVET",
+    "IINF",
+    "PHYS",
+    "IBIO",
+    "BIO",
+    "MED",
+    "VET",
+    "FIS",
+    "ING-INF"
 ]
 
 
-MESI_ITALIANI = (
-    "gennaio|febbraio|marzo|aprile|maggio|"
-    "giugno|luglio|agosto|settembre|ottobre|"
-    "novembre|dicembre"
-)
+MESI_ITALIANI = {
+    "gennaio": 1,
+    "febbraio": 2,
+    "marzo": 3,
+    "aprile": 4,
+    "maggio": 5,
+    "giugno": 6,
+    "luglio": 7,
+    "agosto": 8,
+    "settembre": 9,
+    "ottobre": 10,
+    "novembre": 11,
+    "dicembre": 12
+}
+
+
+def carica_storico():
+
+    try:
+
+        with open(
+            FILE_STORICO,
+            "r",
+            encoding="utf-8"
+        ) as file:
+
+            storico = json.load(
+                file
+            )
+
+        if not isinstance(
+            storico,
+            dict
+        ):
+
+            raise ValueError(
+                "Formato storico non valido"
+            )
+
+        bandi = storico.get(
+            "bandi_gia_segnalati"
+        )
+
+        if not isinstance(
+            bandi,
+            list
+        ):
+
+            storico[
+                "bandi_gia_segnalati"
+            ] = []
+
+        return storico
+
+    except (
+        FileNotFoundError,
+        json.JSONDecodeError,
+        ValueError
+    ):
+
+        return {
+            "bandi_gia_segnalati": []
+        }
+
+
+def salva_storico(storico):
+
+    with open(
+        FILE_STORICO,
+        "w",
+        encoding="utf-8"
+    ) as file:
+
+        json.dump(
+            storico,
+            file,
+            indent=2,
+            ensure_ascii=False
+        )
 
 
 def crea_sessione():
@@ -198,22 +305,12 @@ def scarica_pagina(
         timeout=60
     )
 
-    print(
-        "Status code:",
-        risposta.status_code
-    )
+    risposta.raise_for_status()
 
     print(
-        "URL finale:",
+        "Pagina letta:",
         risposta.url
     )
-
-    print(
-        "Dimensione HTML:",
-        len(risposta.text)
-    )
-
-    risposta.raise_for_status()
 
     return risposta.text
 
@@ -247,19 +344,30 @@ def normalizza_link(href):
     )
 
 
+def testo_link_decodificato(link):
+
+    return unquote(
+        link
+    ).replace(
+        "-",
+        " "
+    ).replace(
+        "_",
+        " "
+    )
+
+
 def e_link_documento(link):
 
     link_lower = link.lower()
 
-    estensioni = [
-        ".pdf",
-        ".doc",
-        ".docx"
-    ]
-
     return any(
         estensione in link_lower
-        for estensione in estensioni
+        for estensione in [
+            ".pdf",
+            ".doc",
+            ".docx"
+        ]
     )
 
 
@@ -273,6 +381,62 @@ def contiene_parola_esclusa(testo):
     )
 
 
+def e_documento_accessorio(
+    titolo
+):
+
+    titolo_lower = titolo.lower()
+
+    return any(
+        parola in titolo_lower
+        for parola in PAROLE_DOCUMENTO_ACCESSORIO
+    )
+
+
+def e_documento_principale(
+    titolo,
+    contesto,
+    link
+):
+
+    titolo_lower = titolo.lower()
+
+    contesto_lower = contesto.lower()
+
+    link_lower = testo_link_decodificato(
+        link
+    ).lower()
+
+    if e_documento_accessorio(
+        titolo
+    ):
+
+        return False
+
+    if any(
+        parola in titolo_lower
+        for parola in PAROLE_DOCUMENTO_PRINCIPALE
+    ):
+
+        return True
+
+    if "bando" in link_lower:
+
+        return True
+
+    if (
+        "decreto rettorale" in contesto_lower
+        and (
+            "procedura" in titolo_lower
+            or "decreto" in titolo_lower
+        )
+    ):
+
+        return True
+
+    return False
+
+
 def e_prima_fascia(testo):
 
     testo_lower = testo.lower()
@@ -283,9 +447,19 @@ def e_prima_fascia(testo):
 
         return False
 
-    return any(
+    ha_prima_fascia = any(
         parola in testo_lower
         for parola in PAROLE_PRIMA_FASCIA
+    )
+
+    ha_seconda_fascia = any(
+        parola in testo_lower
+        for parola in PAROLE_SECONDA_FASCIA
+    )
+
+    return (
+        ha_prima_fascia
+        and not ha_seconda_fascia
     )
 
 
@@ -305,99 +479,299 @@ def e_docenza_contratto(testo):
     )
 
 
-def contiene_settore_interesse(testo):
+def contiene_area_interesse(testo):
 
     testo_maiuscolo = testo.upper()
 
+    for prefisso in PREFISSI_AREA_INTERESSE:
+
+        if prefisso in testo_maiuscolo:
+
+            return True
+
+    parole_area = [
+        "MEDICINA",
+        "CHIRURGIA",
+        "ODONTOIATRIA",
+        "BIOLOGIA",
+        "BIOMEDICINA",
+        "FARMACOLOGIA",
+        "ONCOLOGIA",
+        "PATOLOGIA",
+        "ANESTESIOLOGIA",
+        "NEUROCHIRURGIA",
+        "PEDIATRIA",
+        "CARDIOLOGIA"
+    ]
+
     return any(
-        re.search(
-            pattern,
-            testo_maiuscolo
-        )
-        for pattern in PATTERN_SETTORI_INTERESSE
+        parola in testo_maiuscolo
+        for parola in parole_area
     )
 
 
 def estrai_codici_area(testo):
 
-    testo_maiuscolo = testo.upper()
+    testo_maiuscolo = unquote(
+        testo
+    ).upper()
+
+    pattern = re.compile(
+        r"\b(?:\d{2}/)?"
+        r"(?:MEDS|MEDF|BIOS|MVET|IINF|PHYS|IBIO)"
+        r"[- ]?\d{2}(?:[/ -]?[A-Z])?\b"
+        r"|\b(?:BIO|MED|VET|FIS|ING-INF)"
+        r"[/ -]?\d{2}\b"
+    )
 
     codici = []
 
-    for pattern in PATTERN_SETTORI_INTERESSE:
+    for codice in pattern.findall(
+        testo_maiuscolo
+    ):
 
-        risultati = re.findall(
-            pattern,
-            testo_maiuscolo
+        codice = normalizza_testo(
+            codice
         )
 
-        for codice in risultati:
+        if codice not in codici:
 
-            if codice not in codici:
-
-                codici.append(
-                    codice
-                )
+            codici.append(
+                codice
+            )
 
     return codici
 
 
-def estrai_scadenze(testo):
+def estrai_date_scadenza(testo):
 
-    risultati = []
+    testo = normalizza_testo(
+        testo
+    )
+
+    date_trovate = []
 
     pattern_numerico = re.compile(
         r"scadenza\s*:?\s*"
-        r"(\d{1,2}/\d{1,2}/\d{4})",
+        r"(\d{1,2})/(\d{1,2})/(\d{4})",
         re.IGNORECASE
     )
+
+    for giorno, mese, anno in pattern_numerico.findall(
+        testo
+    ):
+
+        try:
+
+            data = date(
+                int(anno),
+                int(mese),
+                int(giorno)
+            )
+
+            if data not in date_trovate:
+
+                date_trovate.append(
+                    data
+                )
+
+        except ValueError:
+
+            continue
 
     pattern_testuale = re.compile(
         r"scadenza\s*:?\s*"
-        r"(\d{1,2}\s+(?:"
-        + MESI_ITALIANI
-        + r")\s+\d{4})",
+        r"(\d{1,2})\s+"
+        r"(gennaio|febbraio|marzo|aprile|maggio|"
+        r"giugno|luglio|agosto|settembre|ottobre|"
+        r"novembre|dicembre)\s+"
+        r"(\d{4})",
         re.IGNORECASE
     )
 
-    risultati.extend(
-        pattern_numerico.findall(
-            testo
-        )
-    )
+    for giorno, mese_testo, anno in pattern_testuale.findall(
+        testo
+    ):
 
-    risultati.extend(
-        pattern_testuale.findall(
-            testo
-        )
-    )
-
-    risultati_unici = []
-
-    for risultato in risultati:
-
-        risultato = normalizza_testo(
-            risultato
+        mese = MESI_ITALIANI.get(
+            mese_testo.lower()
         )
 
-        if risultato not in risultati_unici:
+        if mese is None:
 
-            risultati_unici.append(
-                risultato
+            continue
+
+        try:
+
+            data = date(
+                int(anno),
+                mese,
+                int(giorno)
             )
 
-    return risultati_unici
+            if data not in date_trovate:
+
+                date_trovate.append(
+                    data
+                )
+
+        except ValueError:
+
+            continue
+
+    return date_trovate
 
 
-def trova_contenitore_documento(
+def scegli_scadenza(date_trovate):
+
+    if not date_trovate:
+
+        return (
+            None,
+            "Scadenza non individuata"
+        )
+
+    future = [
+        data
+        for data in date_trovate
+        if data >= date.today()
+    ]
+
+    if future:
+
+        data_scadenza = min(
+            future
+        )
+
+    else:
+
+        data_scadenza = max(
+            date_trovate
+        )
+
+    return (
+        data_scadenza,
+        data_scadenza.strftime(
+            "%d/%m/%Y"
+        )
+    )
+
+
+def testo_vicino_link(
     elemento
 ):
 
-    nodo = elemento
+    parti_precedenti = []
 
-    miglior_nodo = elemento.parent
+    parti_successive = []
 
-    for _ in range(8):
+    for vicino in elemento.previous_elements:
+
+        if len(
+            parti_precedenti
+        ) >= 14:
+
+            break
+
+        if not isinstance(
+            vicino,
+            NavigableString
+        ):
+
+            continue
+
+        testo = normalizza_testo(
+            str(
+                vicino
+            )
+        )
+
+        if not testo:
+
+            continue
+
+        parti_precedenti.append(
+            testo
+        )
+
+    for vicino in elemento.next_elements:
+
+        if len(
+            parti_successive
+        ) >= 30:
+
+            break
+
+        if isinstance(
+            vicino,
+            Tag
+        ):
+
+            if (
+                vicino.name == "a"
+                and vicino is not elemento
+                and vicino.get(
+                    "href"
+                )
+            ):
+
+                href = vicino.get(
+                    "href",
+                    ""
+                )
+
+                if e_link_documento(
+                    href
+                ):
+
+                    break
+
+            continue
+
+        if not isinstance(
+            vicino,
+            NavigableString
+        ):
+
+            continue
+
+        testo = normalizza_testo(
+            str(
+                vicino
+            )
+        )
+
+        if not testo:
+
+            continue
+
+        parti_successive.append(
+            testo
+        )
+
+    parti_precedenti.reverse()
+
+    return normalizza_testo(
+        " ".join(
+            parti_precedenti
+            + parti_successive
+        )
+    )
+
+
+def contesto_documento(
+    elemento
+):
+
+    contesto_vicino = testo_vicino_link(
+        elemento
+    )
+
+    nodo = elemento.parent
+
+    contesti_parent = []
+
+    for _ in range(6):
 
         if nodo is None:
 
@@ -410,32 +784,32 @@ def trova_contenitore_documento(
             )
         )
 
-        testo_lower = testo.lower()
+        if testo and len(
+            testo
+        ) <= 5000:
 
-        if len(testo) < 3500:
+            contesti_parent.append(
+                testo
+            )
 
-            miglior_nodo = nodo
+            if "scadenza" in testo.lower():
 
-        if (
-            "scadenza" in testo_lower
-            and len(testo) < 3500
-        ):
-
-            return nodo
+                break
 
         nodo = nodo.parent
 
-    return miglior_nodo
+    return normalizza_testo(
+        contesto_vicino
+        + " "
+        + " ".join(
+            contesti_parent
+        )
+    )
 
 
 def scopri_pagine_docenza(
     sessione
 ):
-
-    print(
-        "\nRicerca automatica pagine docenza "
-        "nella pagina indice Roma"
-    )
 
     html = scarica_pagina(
         sessione,
@@ -499,18 +873,6 @@ def scopri_pagine_docenza(
         len(pagine)
     )
 
-    for pagina in pagine.values():
-
-        print(
-            "PAGINA DOCENZA:",
-            pagina["nome"]
-        )
-
-        print(
-            "URL:",
-            pagina["url"]
-        )
-
     return list(
         pagine.values()
     )
@@ -527,25 +889,7 @@ def analizza_pagina(
         "html.parser"
     )
 
-    print(
-        "\n========================================"
-    )
-
-    print(
-        "SEZIONE:",
-        nome
-    )
-
-    print(
-        "TIPO:",
-        tipo
-    )
-
-    print(
-        "========================================"
-    )
-
-    risultati = []
+    procedure = []
 
     links_visti = set()
 
@@ -576,129 +920,317 @@ def analizza_pagina(
 
             continue
 
-        titolo_link = normalizza_testo(
+        titolo = normalizza_testo(
             elemento.get_text(
                 " ",
                 strip=True
             )
         )
 
-        contenitore = trova_contenitore_documento(
-            elemento
-        )
-
-        testo_blocco = normalizza_testo(
-            contenitore.get_text(
-                " ",
-                strip=True
-            )
-        )
-
-        testo_completo = normalizza_testo(
-            titolo_link
-            + " "
-            + testo_blocco
-            + " "
-            + link
-        )
-
-        if tipo == "prima_fascia":
-
-            ammesso = e_prima_fascia(
-                testo_completo
-            )
-
-        elif tipo == "docenza":
-
-            ammesso = e_docenza_contratto(
-                testo_completo
-            )
-
-        else:
-
-            ammesso = False
-
-        if not ammesso:
+        if not titolo:
 
             continue
 
-        links_visti.add(
-            link
+        contesto = contesto_documento(
+            elemento
         )
 
-        scadenze = estrai_scadenze(
-            testo_blocco
+        testo_completo = normalizza_testo(
+            titolo
+            + " "
+            + contesto
+            + " "
+            + testo_link_decodificato(
+                link
+            )
+        )
+
+        if not e_documento_principale(
+            titolo,
+            contesto,
+            link
+        ):
+
+            continue
+
+        if tipo == "prima_fascia":
+
+            if not e_prima_fascia(
+                testo_completo
+            ):
+
+                continue
+
+            if not contiene_area_interesse(
+                testo_completo
+            ):
+
+                continue
+
+        elif tipo == "docenza":
+
+            if not e_docenza_contratto(
+                testo_completo
+            ):
+
+                continue
+
+        else:
+
+            continue
+
+        date_trovate = estrai_date_scadenza(
+            testo_completo
+        )
+
+        data_scadenza, scadenza_testo = (
+            scegli_scadenza(
+                date_trovate
+            )
         )
 
         codici_area = estrai_codici_area(
             testo_completo
         )
 
-        risultato = {
-            "titolo": titolo_link,
-            "testo": testo_blocco,
-            "link": link,
-            "scadenze": scadenze,
-            "codici_area": codici_area,
-            "area_interesse": contiene_settore_interesse(
-                testo_completo
-            )
-        }
+        links_visti.add(
+            link
+        )
 
-        risultati.append(
-            risultato
+        procedure.append(
+            {
+                "sezione": nome,
+                "tipo": tipo,
+                "titolo": titolo,
+                "descrizione": contesto[:1200],
+                "link": link,
+                "codici_area": codici_area,
+                "data_scadenza": data_scadenza,
+                "scadenza_testo": scadenza_testo
+            }
         )
 
     print(
-        "PROCEDURE PERTINENTI TROVATE:",
-        len(risultati)
+        "Procedure pertinenti trovate:",
+        len(procedure)
     )
 
-    for numero, risultato in enumerate(
-        risultati,
+    return procedure
+
+
+def raccogli_procedure(
+    sessione
+):
+
+    pagine_docenza = scopri_pagine_docenza(
+        sessione
+    )
+
+    pagine = (
+        PAGINE_PRIMA_FASCIA
+        + pagine_docenza
+    )
+
+    tutte = []
+
+    for pagina in pagine:
+
+        print(
+            "\nControllo sezione:",
+            pagina["nome"]
+        )
+
+        try:
+
+            html = scarica_pagina(
+                sessione,
+                pagina["url"]
+            )
+
+            procedure = analizza_pagina(
+                pagina["nome"],
+                pagina["tipo"],
+                html
+            )
+
+            tutte.extend(
+                procedure
+            )
+
+        except Exception as errore:
+
+            print(
+                "ERRORE NELLA SEZIONE:",
+                pagina["nome"]
+            )
+
+            print(
+                str(
+                    errore
+                )
+            )
+
+    return tutte
+
+
+def procedura_aperta(
+    procedura
+):
+
+    data_scadenza = procedura[
+        "data_scadenza"
+    ]
+
+    if data_scadenza is None:
+
+        print(
+            "IGNORATA: scadenza non individuata:",
+            procedura["link"]
+        )
+
+        return False
+
+    return data_scadenza >= date.today()
+
+
+def invia_email(
+    bandi_nuovi
+):
+
+    if not EMAIL_ADDRESS:
+
+        print(
+            "EMAIL NON CONFIGURATA"
+        )
+
+        return False
+
+    if not EMAIL_PASSWORD:
+
+        print(
+            "EMAIL_PASSWORD NON CONFIGURATA"
+        )
+
+        return False
+
+    righe = [
+        "Nuovi bandi Università Cattolica Roma",
+        "",
+        (
+            "Nuove procedure ancora aperte "
+            "corrispondenti ai criteri di interesse:"
+        ),
+        ""
+    ]
+
+    for numero, bando in enumerate(
+        bandi_nuovi,
         start=1
     ):
 
-        print(
-            "\n----------------------------------------"
+        righe.append(
+            "========================================"
         )
 
-        print(
-            "PROCEDURA:",
-            numero
+        righe.append(
+            f"BANDO {numero}"
         )
 
-        print(
-            "TITOLO LINK:",
-            risultato["titolo"]
+        righe.append(
+            "========================================"
         )
 
-        print(
-            "AREA DI INTERESSE:",
-            risultato["area_interesse"]
+        righe.append(
+            f"Sezione: {bando['sezione']}"
         )
 
-        print(
-            "CODICI AREA:",
-            risultato["codici_area"]
+        righe.append(
+            f"Tipologia: {bando['tipo']}"
         )
 
-        print(
-            "SCADENZE:",
-            risultato["scadenze"]
+        righe.append(
+            f"Scadenza: {bando['scadenza_testo']}"
         )
 
-        print(
-            "LINK:",
-            risultato["link"]
+        if bando["codici_area"]:
+
+            righe.append(
+                "Area: "
+                + ", ".join(
+                    bando["codici_area"]
+                )
+            )
+
+        righe.append("")
+
+        righe.append(
+            bando["titolo"]
         )
 
-        print(
-            "TESTO BLOCCO:",
-            risultato["testo"][:1800]
+        righe.append("")
+
+        righe.append(
+            bando["descrizione"]
         )
 
-    return risultati
+        righe.append("")
+
+        righe.append(
+            "Documento principale:"
+        )
+
+        righe.append(
+            bando["link"]
+        )
+
+        righe.append("")
+
+    messaggio = "\n".join(
+        righe
+    )
+
+    email = MIMEText(
+        messaggio,
+        "plain",
+        "utf-8"
+    )
+
+    email["Subject"] = (
+        "[CATTOLICA ROMA] Nuovi bandi"
+    )
+
+    email["From"] = EMAIL_ADDRESS
+
+    email["To"] = EMAIL_ADDRESS
+
+    server = smtplib.SMTP(
+        "smtp.gmail.com",
+        587,
+        timeout=60
+    )
+
+    try:
+
+        server.starttls()
+
+        server.login(
+            EMAIL_ADDRESS,
+            EMAIL_PASSWORD
+        )
+
+        server.send_message(
+            email
+        )
+
+    finally:
+
+        server.quit()
+
+    print(
+        "EMAIL INVIATA"
+    )
+
+    return True
 
 
 # ==========================================
@@ -706,64 +1238,157 @@ def analizza_pagina(
 # ==========================================
 
 print(
-    "\n=== DIAGNOSTICA CATTOLICA ROMA ===\n"
+    "\n=== MONITOR CATTOLICA ROMA ===\n"
 )
 
 sessione = crea_sessione()
 
-pagine_docenza = scopri_pagine_docenza(
+storico = carica_storico()
+
+gia_segnalati = set(
+    storico.get(
+        "bandi_gia_segnalati",
+        []
+    )
+)
+
+procedure = raccogli_procedure(
     sessione
 )
 
-pagine_da_controllare = (
-    PAGINE_PRIMA_FASCIA
-    + pagine_docenza
+
+procedure_uniche = {}
+
+for procedura in procedure:
+
+    procedure_uniche[
+        procedura["link"]
+    ] = procedura
+
+
+procedure = list(
+    procedure_uniche.values()
 )
 
-totale_procedure = 0
 
-for pagina in pagine_da_controllare:
+procedure_aperte = [
+    procedura
+    for procedura in procedure
+    if procedura_aperta(
+        procedura
+    )
+]
+
+
+procedure_aperte.sort(
+    key=lambda elemento: (
+        elemento["data_scadenza"],
+        elemento["titolo"]
+    )
+)
+
+
+bandi_nuovi = [
+    procedura
+    for procedura in procedure_aperte
+    if procedura["link"] not in gia_segnalati
+]
+
+
+print(
+    "\nProcedure pertinenti complessive:",
+    len(procedure)
+)
+
+print(
+    "Procedure aperte di interesse:",
+    len(procedure_aperte)
+)
+
+print(
+    "Nuove procedure da segnalare:",
+    len(bandi_nuovi)
+)
+
+
+if not bandi_nuovi:
 
     print(
-        "\n\nControllo:",
-        pagina["nome"]
+        "NESSUN NUOVO BANDO"
     )
 
-    try:
+else:
 
-        html = scarica_pagina(
-            sessione,
-            pagina["url"]
-        )
-
-        risultati = analizza_pagina(
-            pagina["nome"],
-            pagina["tipo"],
-            html
-        )
-
-        totale_procedure += len(
-            risultati
-        )
-
-    except Exception as errore:
+    for bando in bandi_nuovi:
 
         print(
-            "ERRORE:",
-            pagina["nome"]
+            "\nNUOVO BANDO:"
         )
 
         print(
-            str(
-                errore
+            "Sezione:",
+            bando["sezione"]
+        )
+
+        print(
+            "Tipologia:",
+            bando["tipo"]
+        )
+
+        print(
+            "Titolo:",
+            bando["titolo"]
+        )
+
+        if bando["codici_area"]:
+
+            print(
+                "Area:",
+                ", ".join(
+                    bando["codici_area"]
+                )
             )
+
+        print(
+            "Scadenza:",
+            bando["scadenza_testo"]
         )
 
-print(
-    "\nTOTALE PROCEDURE PERTINENTI:",
-    totale_procedure
-)
+        print(
+            "Link:",
+            bando["link"]
+        )
+
+    email_inviata = invia_email(
+        bandi_nuovi
+    )
+
+    if email_inviata:
+
+        for bando in bandi_nuovi:
+
+            storico[
+                "bandi_gia_segnalati"
+            ].append(
+                bando["link"]
+            )
+
+        salva_storico(
+            storico
+        )
+
+        print(
+            "\nSTORICO CATTOLICA AGGIORNATO"
+        )
+
+    else:
+
+        print(
+            "Storico non aggiornato perché "
+            "l'email non è stata inviata"
+        )
+
 
 print(
-    "\n=== FINE DIAGNOSTICA CATTOLICA ROMA ==="
+    "\n=== FINE MONITOR CATTOLICA ROMA ==="
 )
