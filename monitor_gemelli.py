@@ -1,8 +1,10 @@
 import re
 import requests
 
-from bs4 import BeautifulSoup
+from datetime import date, datetime
 from urllib.parse import urljoin, urlsplit, urlunsplit
+
+from bs4 import BeautifulSoup
 
 
 BASE_URL = (
@@ -97,24 +99,33 @@ PAROLE_TEMPO_INDETERMINATO = [
     "tempo indeterminato",
     "contratto a tempo indeterminato",
     "assunzione a tempo indeterminato",
-    "indeterminato",
+    "contratto di lavoro a tempo indeterminato",
+    "rapporto di lavoro a tempo indeterminato",
     "permanent contract",
-    "permanent position"
+    "permanent position",
+    "permanent employment"
 ]
 
 
-PAROLE_CONTRATTI_NON_PRIORITARI = [
+PAROLE_CONTRATTO_TEMPORANEO = [
     "tempo determinato",
     "contratto a tempo determinato",
     "collaborazione coordinata e continuativa",
     "co.co.co",
+    "co.co.co.",
     "cococo",
     "libero professionale",
+    "libera professione",
     "partita iva",
     "borsa di studio",
+    "borsista",
     "stage",
     "tirocinio",
-    "servizio civile"
+    "servizio civile",
+    "contratto di collaborazione",
+    "contratto occasionale",
+    "somministrazione",
+    "apprendistato"
 ]
 
 
@@ -170,13 +181,8 @@ def scarica_pagina(
     )
 
     print(
-        "URL finale:",
+        "Pagina letta:",
         risposta.url
-    )
-
-    print(
-        "Dimensione HTML:",
-        len(risposta.text)
     )
 
     risposta.raise_for_status()
@@ -242,149 +248,95 @@ def contiene_docenza(testo):
     )
 
 
-def contiene_tempo_indeterminato(testo):
+def classifica_contratto(testo):
 
-    return contiene_parola(
-        testo,
-        PAROLE_TEMPO_INDETERMINATO
-    )
-
-
-def contiene_contratto_non_prioritario(testo):
-
-    return contiene_parola(
-        testo,
-        PAROLE_CONTRATTI_NON_PRIORITARI
-    )
-
-
-def link_da_escludere(
-    titolo,
-    link
-):
-
-    testo = (
-        titolo
-        + " "
-        + link
-    )
-
-    return contiene_parola(
-        testo,
-        PAROLE_DA_ESCLUDERE
-    )
-
-
-def sembra_link_offerta(
-    titolo,
-    link
-):
-
-    testo = (
-        titolo
-        + " "
-        + link
-    ).lower()
-
-    indicatori_link = [
-        "/career/",
-        "/job/",
-        "/jobs/",
-        "/annuncio/",
-        "/vacancy/",
-        "/position/",
-        "/offerta/",
-        "detail",
-        "apply"
-    ]
+    testo_lower = testo.lower()
 
     if any(
-        indicatore in testo
-        for indicatore in indicatori_link
+        parola in testo_lower
+        for parola in PAROLE_TEMPO_INDETERMINATO
     ):
 
-        return True
+        return "TEMPO INDETERMINATO"
 
-    indicatori_titolo = [
-        "bando",
-        "medico",
-        "medica",
-        "biologo",
-        "biologa",
-        "ricerca",
-        "ricercatore",
-        "ricercatrice",
-        "specialista",
-        "data scientist",
-        "clinical trial",
-        "laboratorio",
-        "docente",
-        "professore",
-        "insegnamento"
+    if any(
+        parola in testo_lower
+        for parola in PAROLE_CONTRATTO_TEMPORANEO
+    ):
+
+        return "CONTRATTO TEMPORANEO O NON PRIORITARIO"
+
+    return "CONTRATTO NON SPECIFICATO"
+
+
+def estrai_scadenza(testo):
+
+    pattern = re.compile(
+        r"scadenza(?:\s+presentazione\s+domanda)?"
+        r"\s*:?\s*"
+        r"(\d{1,2}/\d{1,2}/\d{4})",
+        re.IGNORECASE
+    )
+
+    corrispondenze = pattern.findall(
+        testo
+    )
+
+    date_valide = []
+
+    for data_testo in corrispondenze:
+
+        try:
+
+            data_scadenza = datetime.strptime(
+                data_testo,
+                "%d/%m/%Y"
+            ).date()
+
+            date_valide.append(
+                data_scadenza
+            )
+
+        except ValueError:
+
+            continue
+
+    if not date_valide:
+
+        return (
+            None,
+            "Scadenza non individuata"
+        )
+
+    date_future = [
+        data_scadenza
+        for data_scadenza in date_valide
+        if data_scadenza >= date.today()
     ]
 
-    return any(
-        indicatore in titolo.lower()
-        for indicatore in indicatori_titolo
+    if date_future:
+
+        data_scadenza = min(
+            date_future
+        )
+
+    else:
+
+        data_scadenza = max(
+            date_valide
+        )
+
+    return (
+        data_scadenza,
+        data_scadenza.strftime(
+            "%d/%m/%Y"
+        )
     )
 
 
-def trova_contenitore_offerta(
-    elemento
+def estrai_annunci(
+    html
 ):
-
-    nodo = elemento
-
-    miglior_nodo = elemento.parent
-
-    for _ in range(8):
-
-        if nodo is None:
-
-            break
-
-        testo = normalizza_testo(
-            nodo.get_text(
-                " ",
-                strip=True
-            )
-        )
-
-        if (
-            testo
-            and len(testo) <= 6000
-        ):
-
-            miglior_nodo = nodo
-
-        testo_lower = testo.lower()
-
-        contiene_dati_offerta = any(
-            parola in testo_lower
-            for parola in [
-                "data di pubblicazione",
-                "scadenza",
-                "invia candidatura",
-                "roma italia",
-                "chi stiamo cercando",
-                "codice rif",
-                "professione/funzione"
-            ]
-        )
-
-        if (
-            contiene_dati_offerta
-            and len(testo) <= 6000
-        ):
-
-            return nodo
-
-        nodo = nodo.parent
-
-    return miglior_nodo
-
-
-def estrai_annunci_html(html):
 
     soup = BeautifulSoup(
         html,
@@ -406,6 +358,14 @@ def estrai_annunci_html(html):
 
             continue
 
+        link = normalizza_link(
+            href
+        )
+
+        if "/jobs/" not in link.lower():
+
+            continue
+
         titolo = normalizza_testo(
             elemento.get_text(
                 " ",
@@ -413,46 +373,16 @@ def estrai_annunci_html(html):
             )
         )
 
-        link = normalizza_link(
-            href
-        )
-
         if not titolo:
 
             continue
 
-        if link_da_escludere(
-            titolo,
-            link
+        if contiene_parola(
+            titolo + " " + link,
+            PAROLE_DA_ESCLUDERE
         ):
 
             continue
-
-        if not sembra_link_offerta(
-            titolo,
-            link
-        ):
-
-            continue
-
-        contenitore = trova_contenitore_offerta(
-            elemento
-        )
-
-        testo_contenitore = normalizza_testo(
-            contenitore.get_text(
-                " ",
-                strip=True
-            )
-        )
-
-        testo_completo = normalizza_testo(
-            titolo
-            + " "
-            + testo_contenitore
-            + " "
-            + link
-        )
 
         if link not in annunci:
 
@@ -460,206 +390,271 @@ def estrai_annunci_html(html):
                 link
             ] = {
                 "titolo": titolo,
-                "link": link,
-                "testo": testo_contenitore,
-                "area_biomedica": contiene_area_biomedica(
-                    testo_completo
-                ),
-                "docenza": contiene_docenza(
-                    testo_completo
-                ),
-                "tempo_indeterminato": (
-                    contiene_tempo_indeterminato(
-                        testo_completo
-                    )
-                ),
-                "contratto_non_prioritario": (
-                    contiene_contratto_non_prioritario(
-                        testo_completo
-                    )
-                )
+                "link": link
             }
+
+        elif len(titolo) > len(
+            annunci[link]["titolo"]
+        ):
+
+            annunci[
+                link
+            ]["titolo"] = titolo
 
     return list(
         annunci.values()
     )
 
 
-def stampa_annunci(annunci):
+def trova_url_ajax(
+    soup
+):
 
-    print(
-        "\nANNUNCI POTENZIALMENTE UTILI:",
-        len(annunci)
+    elemento = soup.find(
+        id="url-for-announces"
     )
 
-    for numero, annuncio in enumerate(
-        annunci[:50],
-        start=1
+    if elemento is None:
+
+        return None
+
+    valore = elemento.get(
+        "value"
+    )
+
+    if not valore:
+
+        return None
+
+    return normalizza_link(
+        valore
+    )
+
+
+def estrai_pagine_html(
+    soup
+):
+
+    links = []
+
+    for elemento in soup.find_all(
+        "a",
+        href=True
     ):
 
-        print(
-            "\n========================================"
+        href = elemento.get(
+            "href"
         )
 
-        print(
-            "ANNUNCIO:",
-            numero
+        testo = normalizza_testo(
+            elemento.get_text(
+                " ",
+                strip=True
+            )
         )
 
-        print(
-            "========================================"
+        if not href:
+
+            continue
+
+        link = normalizza_link(
+            href
         )
 
-        print(
-            "TITOLO:",
-            annuncio["titolo"]
+        testo_completo = (
+            testo
+            + " "
+            + link
+        ).lower()
+
+        if (
+            "page=2" in testo_completo
+            or "pagina 2" in testo_completo
+        ):
+
+            if link not in links:
+
+                links.append(
+                    link
+                )
+
+    return links
+
+
+def prova_pagina_due(
+    sessione,
+    soup
+):
+
+    urls = estrai_pagine_html(
+        soup
+    )
+
+    urls_candidate = [
+        URL_CARRIERE + "?page=2",
+        URL_CARRIERE + "?p=2",
+        URL_CARRIERE + "/2"
+    ]
+
+    for url in urls_candidate:
+
+        if url not in urls:
+
+            urls.append(
+                url
+            )
+
+    annunci_pagina_due = []
+
+    for url in urls:
+
+        try:
+
+            risposta = sessione.get(
+                url,
+                timeout=60
+            )
+
+            if risposta.status_code != 200:
+
+                continue
+
+            annunci = estrai_annunci(
+                risposta.text
+            )
+
+            if annunci:
+
+                print(
+                    "Possibile pagina aggiuntiva:",
+                    risposta.url
+                )
+
+                print(
+                    "Annunci trovati:",
+                    len(annunci)
+                )
+
+                annunci_pagina_due.extend(
+                    annunci
+                )
+
+        except Exception as errore:
+
+            print(
+                "Errore tentativo pagina aggiuntiva:",
+                url
+            )
+
+            print(
+                str(
+                    errore
+                )
+            )
+
+    return annunci_pagina_due
+
+
+def analizza_dettaglio(
+    sessione,
+    annuncio
+):
+
+    try:
+
+        html = scarica_pagina(
+            sessione,
+            annuncio["link"]
         )
 
-        print(
-            "AREA BIOMEDICA:",
-            annuncio["area_biomedica"]
-        )
+    except Exception as errore:
 
         print(
-            "DOCENZA/INSEGNAMENTO:",
-            annuncio["docenza"]
-        )
-
-        print(
-            "TEMPO INDETERMINATO:",
-            annuncio["tempo_indeterminato"]
-        )
-
-        print(
-            "CONTRATTO NON PRIORITARIO:",
-            annuncio["contratto_non_prioritario"]
-        )
-
-        print(
-            "LINK:",
+            "ERRORE NEL DETTAGLIO:",
             annuncio["link"]
         )
 
         print(
-            "TESTO:",
-            annuncio["testo"][:1800]
-        )
-
-
-def stampa_form(
-    soup
-):
-
-    forms = soup.find_all(
-        "form"
-    )
-
-    print(
-        "\nFORM TROVATI:",
-        len(forms)
-    )
-
-    for numero, form in enumerate(
-        forms[:20],
-        start=1
-    ):
-
-        print(
-            f"\nFORM {numero}"
-        )
-
-        print(
-            "ACTION:",
-            form.get(
-                "action"
+            str(
+                errore
             )
         )
 
-        print(
-            "METHOD:",
-            form.get(
-                "method"
-            )
-        )
+        return None
 
-        for campo in form.find_all(
-            ["input", "select"]
-        )[:30]:
-
-            print(
-                "CAMPO:",
-                campo.get(
-                    "name"
-                ),
-                "VALORE:",
-                campo.get(
-                    "value"
-                )
-            )
-
-
-def stampa_script_utili(
-    soup
-):
-
-    totale = 0
-
-    print(
-        "\nSCRIPT POTENZIALMENTE UTILI:"
+    soup = BeautifulSoup(
+        html,
+        "html.parser"
     )
 
-    for script in soup.find_all(
-        "script"
-    ):
+    testo = normalizza_testo(
+        soup.get_text(
+            " ",
+            strip=True
+        )
+    )
 
-        src = script.get(
-            "src",
-            ""
+    titolo = annuncio[
+        "titolo"
+    ]
+
+    intestazione = soup.find(
+        ["h1", "h2"]
+    )
+
+    if intestazione is not None:
+
+        titolo_intestazione = normalizza_testo(
+            intestazione.get_text(
+                " ",
+                strip=True
+            )
         )
 
-        contenuto = script.string or ""
-
-        testo_script = (
-            src
-            + " "
-            + contenuto
-        ).lower()
-
-        if not any(
-            parola in testo_script
-            for parola in [
-                "career",
-                "job",
-                "vacancy",
-                "annunci",
-                "ajax",
-                "api",
-                "graphql",
-                "search",
-                "filter"
-            ]
+        if len(
+            titolo_intestazione
+        ) > len(
+            titolo
         ):
 
-            continue
+            titolo = titolo_intestazione
 
-        totale += 1
-
-        print(
-            "\nSRC:",
-            src
-        )
-
-        if contenuto:
-
-            print(
-                "CONTENUTO:",
-                contenuto[:2500]
-            )
-
-    print(
-        "\nTOTALE SCRIPT UTILI:",
-        totale
+    testo_completo = normalizza_testo(
+        titolo
+        + " "
+        + testo
+        + " "
+        + annuncio["link"]
     )
+
+    area_biomedica = contiene_area_biomedica(
+        testo_completo
+    )
+
+    docenza = contiene_docenza(
+        testo_completo
+    )
+
+    contratto = classifica_contratto(
+        testo_completo
+    )
+
+    data_scadenza, scadenza_testo = (
+        estrai_scadenza(
+            testo_completo
+        )
+    )
+
+    return {
+        "titolo": titolo,
+        "link": annuncio["link"],
+        "area_biomedica": area_biomedica,
+        "docenza": docenza,
+        "contratto": contratto,
+        "data_scadenza": data_scadenza,
+        "scadenza_testo": scadenza_testo,
+        "testo": testo
+    }
 
 
 # ==========================================
@@ -667,7 +662,7 @@ def stampa_script_utili(
 # ==========================================
 
 print(
-    "\n=== DIAGNOSTICA GEMELLI IRCCS ===\n"
+    "\n=== DIAGNOSTICA DETTAGLI GEMELLI IRCCS ===\n"
 )
 
 sessione = crea_sessione()
@@ -682,57 +677,149 @@ soup = BeautifulSoup(
     "html.parser"
 )
 
-testo = normalizza_testo(
-    soup.get_text(
-        " ",
-        strip=True
-    )
+url_ajax = trova_url_ajax(
+    soup
 )
 
 print(
-    "\nPRIMI 5000 CARATTERI DELLA PAGINA:\n"
+    "\nURL AJAX ANNUNCI:",
+    url_ajax
 )
 
-print(
-    testo[:5000]
-)
-
-annunci = estrai_annunci_html(
+annunci = estrai_annunci(
     html
 )
 
-stampa_annunci(
-    annunci
+annunci_extra = prova_pagina_due(
+    sessione,
+    soup
 )
+
+annunci_unici = {}
+
+for annuncio in (
+    annunci
+    + annunci_extra
+):
+
+    annunci_unici[
+        annuncio["link"]
+    ] = annuncio
+
+
+annunci = list(
+    annunci_unici.values()
+)
+
 
 print(
-    "\nIFRAME TROVATI:",
-    len(
-        soup.find_all(
-            "iframe"
-        )
-    )
+    "\nANNUNCI UNICI DA ANALIZZARE:",
+    len(annunci)
 )
 
-for iframe in soup.find_all(
-    "iframe"
+
+dettagli_interessanti = []
+
+for annuncio in annunci:
+
+    testo_preliminare = (
+        annuncio["titolo"]
+        + " "
+        + annuncio["link"]
+    )
+
+    if not (
+        contiene_area_biomedica(
+            testo_preliminare
+        )
+        or contiene_docenza(
+            testo_preliminare
+        )
+    ):
+
+        continue
+
+    dettaglio = analizza_dettaglio(
+        sessione,
+        annuncio
+    )
+
+    if dettaglio is None:
+
+        continue
+
+    if not (
+        dettaglio["area_biomedica"]
+        or dettaglio["docenza"]
+    ):
+
+        continue
+
+    dettagli_interessanti.append(
+        dettaglio
+    )
+
+
+print(
+    "\nDETTAGLI BIOMEDICI O DI DOCENZA:",
+    len(dettagli_interessanti)
+)
+
+
+for numero, dettaglio in enumerate(
+    dettagli_interessanti,
+    start=1
 ):
 
     print(
-        "IFRAME:",
-        iframe.get(
-            "src"
-        )
+        "\n========================================"
     )
 
-stampa_form(
-    soup
-)
+    print(
+        "OFFERTA:",
+        numero
+    )
 
-stampa_script_utili(
-    soup
-)
+    print(
+        "========================================"
+    )
+
+    print(
+        "TITOLO:",
+        dettaglio["titolo"]
+    )
+
+    print(
+        "AREA BIOMEDICA:",
+        dettaglio["area_biomedica"]
+    )
+
+    print(
+        "DOCENZA/INSEGNAMENTO:",
+        dettaglio["docenza"]
+    )
+
+    print(
+        "CONTRATTO:",
+        dettaglio["contratto"]
+    )
+
+    print(
+        "SCADENZA:",
+        dettaglio["scadenza_testo"]
+    )
+
+    print(
+        "LINK:",
+        dettaglio["link"]
+    )
+
+    print(
+        "TESTO DETTAGLIO:",
+        dettaglio["testo"][:2500]
+    )
+
 
 print(
-    "\n=== FINE DIAGNOSTICA GEMELLI IRCCS ==="
+    "\n=== FINE DIAGNOSTICA DETTAGLI GEMELLI IRCCS ==="
 )
