@@ -710,11 +710,22 @@ def trova_section_ajax(html):
 
     if not corrispondenza:
 
+        print(
+            "Parametro section AJAX non individuato"
+        )
+
         return None
 
-    return corrispondenza.group(
+    valore_section = corrispondenza.group(
         1
     )
+
+    print(
+        "Parametro section AJAX:",
+        valore_section
+    )
+
+    return valore_section
 
 
 def scarica_pagine_ajax(
