@@ -5,6 +5,7 @@ import smtplib
 
 from datetime import date, datetime
 from email.mime.text import MIMEText
+from html import unescape
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import requests
@@ -29,18 +30,16 @@ EMAIL_PASSWORD = os.getenv(
 
 
 # =========================================================
-# PAROLE CHIAVE
+# PAROLE CHIAVE PER L'AREA DI INTERESSE
 # =========================================================
 
-PAROLE_DOCENZA_CONTRATTO = [
+PAROLE_DOCENZA = [
     "docente a contratto",
     "docenti a contratto",
     "docenza a contratto",
     "docenze a contratto",
     "professore a contratto",
     "professori a contratto",
-    "insegnamento a contratto",
-    "insegnamenti a contratto",
     "incarico di insegnamento",
     "incarichi di insegnamento",
     "conferimento di insegnamento",
@@ -53,13 +52,11 @@ PAROLE_DOCENZA_CONTRATTO = [
     "incarichi di docenza",
     "didattica integrativa",
     "attivita didattica",
-    "attività didattica",
-    "scuola di specializzazione",
-    "scuole di specializzazione"
+    "attività didattica"
 ]
 
 
-PAROLE_AREA_BIOMEDICA = [
+PAROLE_BIOMEDICHE = [
     "biologo",
     "biologa",
     "biologi",
@@ -91,8 +88,8 @@ PAROLE_AREA_BIOMEDICA = [
     "ricerca biomedica",
     "ricerca clinica",
     "ricerca scientifica",
-    "ricercatore",
-    "ricercatrice",
+    "ricercatore biomedico",
+    "ricercatrice biomedica",
     "clinical trial",
     "clinical research",
     "trial clinico",
@@ -104,6 +101,8 @@ PAROLE_AREA_BIOMEDICA = [
     "biostatistica",
     "data scientist",
     "data science",
+    "healthcare",
+    "value based healthcare",
     "biobanca",
     "biobanking",
     "biomarcatori",
@@ -158,7 +157,10 @@ PAROLE_AREA_BIOMEDICA = [
 ]
 
 
-PAROLE_RUOLO_AMMINISTRATIVO = [
+# Queste parole nel titolo identificano ruoli non coerenti
+# con il monitor, anche se il reparto è medico o scientifico.
+
+PAROLE_RUOLI_DA_ESCLUDERE = [
     "addetto alla segreteria",
     "addetta alla segreteria",
     "addetto/a alla segreteria",
@@ -168,6 +170,9 @@ PAROLE_RUOLO_AMMINISTRATIVO = [
     "addetto amministrativo",
     "addetta amministrativa",
     "addetto/a amministrativo",
+    "data entry",
+    "revisore esterno",
+    "revisori esterni",
     "contabilita",
     "contabilità",
     "risorse umane",
@@ -183,6 +188,18 @@ PAROLE_RUOLO_AMMINISTRATIVO = [
     "fundraising"
 ]
 
+
+PAROLE_DA_ESCLUDERE_SEMPRE = [
+    "candidatura spontanea",
+    "recupero password",
+    "carica il cv per registrarti",
+    "non hai ancora un profilo"
+]
+
+
+# =========================================================
+# CLASSIFICAZIONE DEL CONTRATTO
+# =========================================================
 
 PAROLE_TEMPO_INDETERMINATO = [
     "tempo indeterminato",
@@ -243,13 +260,6 @@ PAROLE_ALTRI_CONTRATTI = [
     "contratto occasionale",
     "collaborazione occasionale",
     "servizio civile"
-]
-
-
-PAROLE_DA_ESCLUDERE = [
-    "candidatura spontanea",
-    "recupero password",
-    "informativa privacy"
 ]
 
 
@@ -378,8 +388,16 @@ def scarica_pagina(
 
 def normalizza_testo(testo):
 
+    if testo is None:
+
+        return ""
+
     return " ".join(
-        testo.split()
+        unescape(
+            str(
+                testo
+            )
+        ).split()
     )
 
 
@@ -418,11 +436,19 @@ def contiene_parola(
     )
 
 
+def titolo_da_escludere(titolo):
+
+    return contiene_parola(
+        titolo,
+        PAROLE_RUOLI_DA_ESCLUDERE
+    )
+
+
 def contiene_docenza(testo):
 
     return contiene_parola(
         testo,
-        PAROLE_DOCENZA_CONTRATTO
+        PAROLE_DOCENZA
     )
 
 
@@ -430,64 +456,116 @@ def contiene_area_biomedica(testo):
 
     return contiene_parola(
         testo,
-        PAROLE_AREA_BIOMEDICA
-    )
-
-
-def titolo_amministrativo(titolo):
-
-    return contiene_parola(
-        titolo,
-        PAROLE_RUOLO_AMMINISTRATIVO
+        PAROLE_BIOMEDICHE
     )
 
 
 def e_offerta_pertinente(
     titolo,
-    testo_completo
+    descrizione
 ):
 
-    if contiene_docenza(
-        testo_completo
+    titolo = normalizza_testo(
+        titolo
+    )
+
+    descrizione = normalizza_testo(
+        descrizione
+    )
+
+    if contiene_parola(
+        titolo,
+        PAROLE_DA_ESCLUDERE_SEMPRE
     ):
 
-        return True
+        return False
 
-    if titolo_amministrativo(
+    if titolo_da_escludere(
         titolo
     ):
 
         return False
 
-    return contiene_area_biomedica(
-        testo_completo
-    )
+    # La docenza deve essere presente nel titolo oppure
+    # nella descrizione specifica dell'offerta.
 
+    if contiene_docenza(
+        titolo
+    ):
 
-# =========================================================
-# CLASSIFICAZIONE DEL CONTRATTO
-# =========================================================
+        return True
 
-def classifica_contratto(testo):
+    if contiene_docenza(
+        descrizione
+    ):
 
-    testo_lower = testo.lower()
+        return True
+
+    # La pertinenza biomedicale viene valutata prima
+    # sul titolo, che è la fonte più affidabile.
+
+    if contiene_area_biomedica(
+        titolo
+    ):
+
+        return True
+
+    # Per titoli generici come "Bando PNRR", viene usata
+    # anche la descrizione specifica dell'offerta.
+
+    titoli_generici = [
+        "bando",
+        "avviso",
+        "specialista",
+        "ricercatore",
+        "ricercatrice"
+    ]
+
+    titolo_lower = titolo.lower()
 
     if any(
-        parola in testo_lower
+        parola in titolo_lower
+        for parola in titoli_generici
+    ):
+
+        return contiene_area_biomedica(
+            descrizione
+        )
+
+    return False
+
+
+# =========================================================
+# CONTRATTO
+# =========================================================
+
+def classifica_contratto(
+    titolo,
+    descrizione
+):
+
+    testo = normalizza_testo(
+        titolo
+        + " "
+        + descrizione
+    ).lower()
+
+    if any(
+        parola in testo
         for parola in PAROLE_TEMPO_INDETERMINATO
     ):
 
         return "Tempo indeterminato"
 
     if any(
-        parola in testo_lower
+        parola in testo
         for parola in PAROLE_TEMPO_DETERMINATO
     ):
 
         return "Tempo determinato"
 
     if any(
-        parola in testo_lower
+        parola in testo
         for parola in PAROLE_COCOCO
     ):
 
@@ -497,28 +575,28 @@ def classifica_contratto(testo):
         )
 
     if any(
-        parola in testo_lower
+        parola in testo
         for parola in PAROLE_LIBERO_PROFESSIONALE
     ):
 
         return "Contratto libero-professionale"
 
     if any(
-        parola in testo_lower
+        parola in testo
         for parola in PAROLE_BORSA
     ):
 
         return "Borsa di studio"
 
     if any(
-        parola in testo_lower
+        parola in testo
         for parola in PAROLE_STAGE
     ):
 
         return "Stage o tirocinio"
 
     if any(
-        parola in testo_lower
+        parola in testo
         for parola in PAROLE_ALTRI_CONTRATTI
     ):
 
@@ -531,7 +609,51 @@ def classifica_contratto(testo):
 # DATE
 # =========================================================
 
-def estrai_scadenza(testo):
+def converti_data(data_testo):
+
+    if not data_testo:
+
+        return None
+
+    data_testo = data_testo.strip()
+
+    data_testo = data_testo.replace(
+        "Z",
+        "+00:00"
+    )
+
+    formati = [
+        "%d/%m/%Y",
+        "%Y-%m-%d",
+        "%Y-%m-%dT%H:%M:%S%z",
+        "%Y-%m-%dT%H:%M:%S"
+    ]
+
+    for formato in formati:
+
+        try:
+
+            return datetime.strptime(
+                data_testo,
+                formato
+            ).date()
+
+        except ValueError:
+
+            continue
+
+    try:
+
+        return datetime.fromisoformat(
+            data_testo
+        ).date()
+
+    except ValueError:
+
+        return None
+
+
+def estrai_scadenza_da_testo(testo):
 
     patterns = [
         re.compile(
@@ -551,67 +673,49 @@ def estrai_scadenza(testo):
         )
     ]
 
-    date_valide = []
+    date_trovate = []
 
     for pattern in patterns:
 
-        corrispondenze = pattern.findall(
+        for data_testo in pattern.findall(
             testo
-        )
+        ):
 
-        for data_testo in corrispondenze:
+            data_scadenza = converti_data(
+                data_testo
+            )
 
-            try:
+            if (
+                data_scadenza is not None
+                and data_scadenza not in date_trovate
+            ):
 
-                data_scadenza = datetime.strptime(
-                    data_testo,
-                    "%d/%m/%Y"
-                ).date()
+                date_trovate.append(
+                    data_scadenza
+                )
 
-                if data_scadenza not in date_valide:
+    if not date_trovate:
 
-                    date_valide.append(
-                        data_scadenza
-                    )
-
-            except ValueError:
-
-                continue
-
-    if not date_valide:
-
-        return (
-            None,
-            "Scadenza non specificata"
-        )
+        return None
 
     date_future = [
         data_scadenza
-        for data_scadenza in date_valide
+        for data_scadenza in date_trovate
         if data_scadenza >= date.today()
     ]
 
     if date_future:
 
-        data_scadenza = min(
+        return min(
             date_future
         )
 
-    else:
-
-        data_scadenza = max(
-            date_valide
-        )
-
-    return (
-        data_scadenza,
-        data_scadenza.strftime(
-            "%d/%m/%Y"
-        )
+    return max(
+        date_trovate
     )
 
 
-def estrai_data_pubblicazione(testo):
+def estrai_pubblicazione_da_testo(testo):
 
     pattern = re.compile(
         r"data\s+di\s+pubblicazione"
@@ -626,18 +730,153 @@ def estrai_data_pubblicazione(testo):
 
     if not corrispondenza:
 
-        return (
-            "Data di pubblicazione "
-            "non specificata"
-        )
+        return None
 
-    return corrispondenza.group(
-        1
+    return converti_data(
+        corrispondenza.group(
+            1
+        )
+    )
+
+
+def formatta_data(
+    data_valore,
+    testo_default
+):
+
+    if data_valore is None:
+
+        return testo_default
+
+    return data_valore.strftime(
+        "%d/%m/%Y"
     )
 
 
 # =========================================================
-# ESTRAZIONE DEGLI ANNUNCI
+# JSON-LD DELLA SINGOLA OFFERTA
+# =========================================================
+
+def raccogli_oggetti_json(
+    valore
+):
+
+    risultati = []
+
+    if isinstance(
+        valore,
+        dict
+    ):
+
+        risultati.append(
+            valore
+        )
+
+        for sotto_valore in valore.values():
+
+            risultati.extend(
+                raccogli_oggetti_json(
+                    sotto_valore
+                )
+            )
+
+    elif isinstance(
+        valore,
+        list
+    ):
+
+        for elemento in valore:
+
+            risultati.extend(
+                raccogli_oggetti_json(
+                    elemento
+                )
+            )
+
+    return risultati
+
+
+def estrai_jobposting_jsonld(soup):
+
+    for script in soup.find_all(
+        "script",
+        type="application/ld+json"
+    ):
+
+        contenuto = script.string
+
+        if not contenuto:
+
+            continue
+
+        try:
+
+            dati = json.loads(
+                contenuto
+            )
+
+        except json.JSONDecodeError:
+
+            continue
+
+        for oggetto in raccogli_oggetti_json(
+            dati
+        ):
+
+            tipo = oggetto.get(
+                "@type"
+            )
+
+            if isinstance(
+                tipo,
+                list
+            ):
+
+                tipi = [
+                    str(
+                        elemento
+                    ).lower()
+                    for elemento in tipo
+                ]
+
+            else:
+
+                tipi = [
+                    str(
+                        tipo
+                    ).lower()
+                ]
+
+            if "jobposting" in tipi:
+
+                return oggetto
+
+    return None
+
+
+def pulisci_html_testo(testo_html):
+
+    if not testo_html:
+
+        return ""
+
+    soup = BeautifulSoup(
+        str(
+            testo_html
+        ),
+        "html.parser"
+    )
+
+    return normalizza_testo(
+        soup.get_text(
+            " ",
+            strip=True
+        )
+    )
+
+
+# =========================================================
+# ESTRAZIONE DALL'ELENCO
 # =========================================================
 
 def estrai_annunci(html):
@@ -682,8 +921,8 @@ def estrai_annunci(html):
             continue
 
         if contiene_parola(
-            titolo + " " + link,
-            PAROLE_DA_ESCLUDERE
+            titolo,
+            PAROLE_DA_ESCLUDERE_SEMPRE
         ):
 
             continue
@@ -708,288 +947,48 @@ def estrai_annunci(html):
 
 
 # =========================================================
-# PAGINAZIONE AJAX
+# CONTENUTO SPECIFICO DEL DETTAGLIO
 # =========================================================
 
-def trova_url_ajax(soup):
-
-    elemento = soup.find(
-        id="url-for-announces"
-    )
-
-    if elemento is None:
-
-        return None
-
-    valore = elemento.get(
-        "value"
-    )
-
-    if not valore:
-
-        return None
-
-    return normalizza_link(
-        valore
-    )
-
-
-def trova_section_ajax(html):
-
-    marcatori = [
-        "'section': '",
-        '"section": "',
-        "'section' : '",
-        '"section" : "',
-        "'section':'",
-        '"section":"'
-    ]
-
-    for marcatore in marcatori:
-
-        posizione_inizio = html.find(
-            marcatore
-        )
-
-        if posizione_inizio == -1:
-
-            continue
-
-        posizione_inizio += len(
-            marcatore
-        )
-
-        carattere_chiusura = marcatore[
-            -1
-        ]
-
-        posizione_fine = html.find(
-            carattere_chiusura,
-            posizione_inizio
-        )
-
-        if posizione_fine == -1:
-
-            continue
-
-        valore_section = html[
-            posizione_inizio:posizione_fine
-        ].strip()
-
-        if not valore_section:
-
-            continue
-
-        print(
-            "Parametro section AJAX:",
-            valore_section
-        )
-
-        return valore_section
-
-    print(
-        "Parametro section AJAX non individuato. "
-        "Il monitor continuera usando "
-        "la pagina principale."
-    )
-
-    return None
-
-
-def scarica_pagine_ajax(
-    sessione,
-    html_principale
-):
-
-    soup = BeautifulSoup(
-        html_principale,
-        "html.parser"
-    )
-
-    url_ajax = trova_url_ajax(
-        soup
-    )
-
-    section = trova_section_ajax(
-        html_principale
-    )
-
-    if not url_ajax:
-
-        print(
-            "Paginazione AJAX saltata: "
-            "URL non disponibile."
-        )
-
-        return []
-
-    if not section:
-
-        print(
-            "Paginazione AJAX saltata: "
-            "parametro section non disponibile."
-        )
-
-        return []
-
-    annunci_extra = []
-
-    links_gia_ricevuti = set()
-
-    for pagina in range(
-        2,
-        11
-    ):
-
-        dati = {
-            "act1": "vacancyListCareer",
-            "section": section,
-            "order": "",
-            "page": pagina,
-            "country": "",
-            "region": "",
-            "function": "",
-            "project": "",
-            "text": "",
-            "division": "",
-            "company": ""
-        }
-
-        try:
-
-            risposta = sessione.post(
-                url_ajax,
-                data=dati,
-                timeout=60
-            )
-
-            risposta.raise_for_status()
-
-        except Exception as errore:
-
-            print(
-                "Paginazione AJAX interrotta "
-                f"alla pagina {pagina}:"
-            )
-
-            print(
-                str(
-                    errore
-                )
-            )
-
-            break
-
-        annunci_pagina = estrai_annunci(
-            risposta.text
-        )
-
-        print(
-            f"Pagina AJAX {pagina}:",
-            len(annunci_pagina),
-            "annunci"
-        )
-
-        if not annunci_pagina:
-
-            break
-
-        links_pagina = {
-            annuncio["link"]
-            for annuncio in annunci_pagina
-        }
-
-        links_nuovi = (
-            links_pagina
-            - links_gia_ricevuti
-        )
-
-        if not links_nuovi:
-
-            print(
-                "Nessun nuovo link nella pagina AJAX. "
-                "Paginazione conclusa."
-            )
-
-            break
-
-        annunci_extra.extend(
-            annunci_pagina
-        )
-
-        links_gia_ricevuti.update(
-            links_pagina
-        )
-
-    return annunci_extra
-
-
-# =========================================================
-# DETTAGLIO DELL'OFFERTA
-# =========================================================
-
-def estrai_titolo_dettaglio(
-    soup,
-    titolo_originale
-):
-
-    titolo = titolo_originale
-
-    for intestazione in soup.find_all(
-        ["h1", "h2"]
-    ):
-
-        testo_intestazione = normalizza_testo(
-            intestazione.get_text(
-                " ",
-                strip=True
-            )
-        )
-
-        if not testo_intestazione:
-
-            continue
-
-        if (
-            "fondazione policlinico" in
-            testo_intestazione.lower()
+def rimuovi_elementi_comuni(soup):
+
+    for selettore in [
+        "script",
+        "style",
+        "nav",
+        "footer",
+        "header",
+        "form",
+        "aside",
+        ".login",
+        ".register",
+        ".registration",
+        ".candidate-registration",
+        ".privacy",
+        ".cookie",
+        ".modal"
+    ]:
+
+        for elemento in soup.select(
+            selettore
         ):
 
-            continue
-
-        if (
-            testo_intestazione.lower()
-            in [
-                "annunci",
-                "career",
-                "invia candidatura"
-            ]
-        ):
-
-            continue
-
-        if len(
-            testo_intestazione
-        ) > len(
-            titolo
-        ):
-
-            titolo = testo_intestazione
-
-    return titolo
+            elemento.decompose()
 
 
-def estrai_descrizione(
-    soup,
-    testo_completo
-):
+def estrai_contenuto_specifico(soup):
 
     selettori = [
+        "[itemprop='description']",
         ".vacancy-description",
         ".job-description",
-        ".description",
         ".announce-description",
-        "[itemprop='description']"
+        ".description",
+        ".vacancy-detail",
+        ".job-detail",
+        "article",
+        "main",
+        "#contenutipagine"
     ]
 
     for selettore in selettori:
@@ -1009,32 +1008,11 @@ def estrai_descrizione(
             )
         )
 
-        if testo:
+        if len(testo) >= 100:
 
-            return testo[:1800]
+            return testo
 
-    indicatori = [
-        "CHI STIAMO CERCANDO",
-        "RUOLO:",
-        "Titolo del Progetto:",
-        "La Fondazione"
-    ]
-
-    for indicatore in indicatori:
-
-        posizione = testo_completo.find(
-            indicatore
-        )
-
-        if posizione == -1:
-
-            continue
-
-        return testo_completo[
-            posizione:posizione + 1800
-        ]
-
-    return testo_completo[:1800]
+    return ""
 
 
 def analizza_dettaglio(
@@ -1064,64 +1042,151 @@ def analizza_dettaglio(
 
         return None
 
-    soup = BeautifulSoup(
+    soup_originale = BeautifulSoup(
         html,
         "html.parser"
     )
 
-    testo_pagina = normalizza_testo(
-        soup.get_text(
-            " ",
-            strip=True
+    jobposting = estrai_jobposting_jsonld(
+        soup_originale
+    )
+
+    # Il titolo affidabile resta sempre quello
+    # già estratto dalla lista degli annunci.
+
+    titolo = annuncio[
+        "titolo"
+    ]
+
+    descrizione = ""
+
+    data_pubblicazione = None
+
+    data_scadenza = None
+
+    contratto_schema = ""
+
+    if jobposting is not None:
+
+        descrizione = pulisci_html_testo(
+            jobposting.get(
+                "description",
+                ""
+            )
         )
-    )
 
-    titolo = estrai_titolo_dettaglio(
-        soup,
-        annuncio["titolo"]
-    )
+        data_pubblicazione = converti_data(
+            str(
+                jobposting.get(
+                    "datePosted",
+                    ""
+                )
+            )
+        )
 
-    testo_completo = normalizza_testo(
-        titolo
-        + " "
-        + testo_pagina
-        + " "
-        + annuncio["link"]
-    )
+        data_scadenza = converti_data(
+            str(
+                jobposting.get(
+                    "validThrough",
+                    ""
+                )
+            )
+        )
 
-    if not e_offerta_pertinente(
-        titolo,
-        testo_completo
-    ):
+        contratto_schema = normalizza_testo(
+            jobposting.get(
+                "employmentType",
+                ""
+            )
+        )
+
+    if not descrizione:
+
+        soup_specifico = BeautifulSoup(
+            html,
+            "html.parser"
+        )
+
+        rimuovi_elementi_comuni(
+            soup_specifico
+        )
+
+        descrizione = estrai_contenuto_specifico(
+            soup_specifico
+        )
+
+    if not descrizione:
+
+        print(
+            "IGNORATA: contenuto specifico "
+            "dell'offerta non individuato:",
+            annuncio["link"]
+        )
 
         return None
 
-    data_scadenza, scadenza_testo = (
-        estrai_scadenza(
-            testo_completo
+    # Le date vengono cercate esclusivamente nella
+    # descrizione specifica, non nell'intera pagina.
+
+    if data_scadenza is None:
+
+        data_scadenza = estrai_scadenza_da_testo(
+            descrizione
         )
+
+    if data_pubblicazione is None:
+
+        data_pubblicazione = estrai_pubblicazione_da_testo(
+            descrizione
+        )
+
+    if not e_offerta_pertinente(
+        titolo,
+        descrizione
+    ):
+
+        print(
+            "ESCLUSA per scarsa pertinenza:",
+            titolo
+        )
+
+        return None
+
+    testo_contratto = normalizza_testo(
+        titolo
+        + " "
+        + descrizione
+        + " "
+        + contratto_schema
     )
 
     return {
         "titolo": titolo,
         "link": annuncio["link"],
+        "descrizione": descrizione[:1800],
         "area_biomedica": contiene_area_biomedica(
-            testo_completo
+            titolo
+            + " "
+            + descrizione
         ),
         "docenza": contiene_docenza(
-            testo_completo
+            titolo
+            + " "
+            + descrizione
         ),
         "contratto": classifica_contratto(
-            testo_completo
+            titolo,
+            testo_contratto
         ),
-        "data_pubblicazione": estrai_data_pubblicazione(
-            testo_completo
-        ),
+        "data_pubblicazione": data_pubblicazione,
         "data_scadenza": data_scadenza,
-        "scadenza_testo": scadenza_testo,
-        "descrizione": estrai_descrizione(
-            soup,
-            testo_pagina
+        "pubblicazione_testo": formatta_data(
+            data_pubblicazione,
+            "Data di pubblicazione non specificata"
+        ),
+        "scadenza_testo": formatta_data(
+            data_scadenza,
+            "Scadenza non specificata"
         )
     }
 
@@ -1131,6 +1196,9 @@ def offerta_attiva(offerta):
     data_scadenza = offerta[
         "data_scadenza"
     ]
+
+    # Se non è indicata una scadenza, l'offerta è
+    # considerata attiva finché compare nell'elenco.
 
     if data_scadenza is None:
 
@@ -1164,16 +1232,16 @@ def invia_email(
         return False
 
     righe = [
-        "Nuove opportunita Gemelli IRCCS",
+        "Nuove opportunità Gemelli IRCCS",
         "",
         (
-            "Sono state individuate nuove opportunita "
+            "Sono state individuate nuove opportunità "
             "biomediche, scientifiche, sanitarie "
             "o didattiche."
         ),
         "",
         (
-            "La tipologia contrattuale e riportata "
+            "La tipologia contrattuale è riportata "
             "come informazione e non costituisce "
             "un criterio di esclusione."
         ),
@@ -1203,7 +1271,7 @@ def invia_email(
 
         righe.append(
             "Pubblicazione: "
-            + offerta["data_pubblicazione"]
+            + offerta["pubblicazione_testo"]
         )
 
         righe.append(
@@ -1213,7 +1281,7 @@ def invia_email(
         righe.append(
             "Area biomedica/scientifica: "
             + (
-                "Si"
+                "Sì"
                 if offerta["area_biomedica"]
                 else "No"
             )
@@ -1222,7 +1290,7 @@ def invia_email(
         righe.append(
             "Docenza/insegnamento: "
             + (
-                "Si"
+                "Sì"
                 if offerta["docenza"]
                 else "No"
             )
@@ -1263,7 +1331,7 @@ def invia_email(
     )
 
     email["Subject"] = (
-        "[GEMELLI IRCCS] Nuove opportunita"
+        "[GEMELLI IRCCS] Nuove opportunità"
     )
 
     email["From"] = EMAIL_ADDRESS
@@ -1326,31 +1394,8 @@ html_principale = scarica_pagina(
 )
 
 
-annunci_principali = estrai_annunci(
+annunci = estrai_annunci(
     html_principale
-)
-
-
-annunci_extra = scarica_pagine_ajax(
-    sessione,
-    html_principale
-)
-
-
-annunci_unici = {}
-
-for annuncio in (
-    annunci_principali
-    + annunci_extra
-):
-
-    annunci_unici[
-        annuncio["link"]
-    ] = annuncio
-
-
-annunci = list(
-    annunci_unici.values()
 )
 
 
@@ -1363,6 +1408,20 @@ print(
 offerte_pertinenti = []
 
 for annuncio in annunci:
+
+    # Prima esclusione basata sul vero titolo
+    # estratto dall'elenco.
+
+    if titolo_da_escludere(
+        annuncio["titolo"]
+    ):
+
+        print(
+            "ESCLUSA per ruolo amministrativo/operativo:",
+            annuncio["titolo"]
+        )
+
+        continue
 
     dettaglio = analizza_dettaglio(
         sessione,
@@ -1409,7 +1468,7 @@ offerte_nuove = [
 
 
 print(
-    "Offerte pertinenti:",
+    "\nOfferte pertinenti:",
     len(offerte_pertinenti)
 )
 
@@ -1450,7 +1509,7 @@ else:
 
         print(
             "Pubblicazione:",
-            offerta["data_pubblicazione"]
+            offerta["pubblicazione_testo"]
         )
 
         print(
