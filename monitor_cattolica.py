@@ -1,66 +1,137 @@
+import re
 import requests
 
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit, urlunsplit
 
 
 BASE_URL = (
     "https://progetti.unicatt.it"
 )
 
-URL_CATTOLICA_ROMA = (
-    "https://progetti.unicatt.it/"
-    "progetti-ateneo-concorsi-roma"
-)
 
-
-PAROLE_UTILI = [
-    "professore",
-    "prima fascia",
-    "i fascia",
-    "ordinario",
-    "docente",
-    "docenti",
-    "docenza",
-    "insegnamento",
-    "contratto",
-    "ricercatore",
-    "ricercatori",
-    "concorso",
-    "procedura",
-    "selezione",
-    "bando",
-    "avviso",
-    "manifestazione",
-    "meds-",
-    "bios-",
-    "med/",
-    "bio/"
+PAGINE_CATTOLICA_ROMA = [
+    {
+        "nome": (
+            "Professori I e II fascia "
+            "- Art. 18"
+        ),
+        "tipo": "prima_fascia",
+        "url": (
+            "https://progetti.unicatt.it/"
+            "progetti-ateneo-roma-chiamata-di-professori-"
+            "di-prima-e-seconda-fascia-legge-240-2010-art-18"
+        )
+    },
+    {
+        "nome": (
+            "Professori I e II fascia "
+            "- Art. 7, commi 5-bis e 5-ter"
+        ),
+        "tipo": "prima_fascia",
+        "url": (
+            "https://progetti.unicatt.it/"
+            "progetti-ateneo-roma-chiamata-di-professori-"
+            "di-prima-e-seconda-fascia-legge-240-2010-art-7"
+        )
+    },
+    {
+        "nome": (
+            "Professori I e II fascia "
+            "- Art. 24, comma 6"
+        ),
+        "tipo": "prima_fascia",
+        "url": (
+            "https://progetti.unicatt.it/"
+            "progetti-ateneo-roma-chiamata-diretta-di-"
+            "professore-di-i-e-ii-fascia-legge-240-2010-"
+            "art-24-comma-6"
+        )
+    }
 ]
 
 
-def scarica_pagina():
+PAROLE_PRIMA_FASCIA = [
+    "prima fascia",
+    "i fascia",
+    "professore universitario di prima fascia",
+    "professore di ruolo di prima fascia"
+]
 
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 "
-            "(X11; Linux x86_64) "
-            "AppleWebKit/537.36 "
-            "(KHTML, like Gecko) "
-            "Chrome/126.0 Safari/537.36"
-        ),
-        "Accept": (
-            "text/html,application/xhtml+xml,"
-            "application/xml;q=0.9,*/*;q=0.8"
-        ),
-        "Accept-Language": (
-            "it-IT,it;q=0.9,en;q=0.8"
-        )
-    }
 
-    risposta = requests.get(
-        URL_CATTOLICA_ROMA,
-        headers=headers,
+PAROLE_DA_ESCLUDERE = [
+    "seconda fascia",
+    "ii fascia",
+    "revoca",
+    "commissione",
+    "approvazione atti",
+    "verbale",
+    "graduatoria",
+    "esito",
+    "regolamento",
+    "modulo",
+    "allegato"
+]
+
+
+PAROLE_AREA = [
+    "meds-",
+    "medf-",
+    "bios-",
+    "mvet-",
+    "iinf-",
+    "phys-",
+    "med/",
+    "bio/",
+    "vet/",
+    "fis/",
+    "ing-inf/",
+    "medicina",
+    "chirurgia",
+    "odontoiatria",
+    "biologia",
+    "biomedicina",
+    "farmacologia",
+    "oncologia",
+    "patologia",
+    "anestesiologia",
+    "neurochirurgia"
+]
+
+
+def crea_sessione():
+
+    sessione = requests.Session()
+
+    sessione.headers.update(
+        {
+            "User-Agent": (
+                "Mozilla/5.0 "
+                "(X11; Linux x86_64) "
+                "AppleWebKit/537.36 "
+                "(KHTML, like Gecko) "
+                "Chrome/126.0 Safari/537.36"
+            ),
+            "Accept": (
+                "text/html,application/xhtml+xml,"
+                "application/xml;q=0.9,*/*;q=0.8"
+            ),
+            "Accept-Language": (
+                "it-IT,it;q=0.9,en;q=0.8"
+            )
+        }
+    )
+
+    return sessione
+
+
+def scarica_pagina(
+    sessione,
+    url
+):
+
+    risposta = sessione.get(
+        url,
         timeout=60
     )
 
@@ -93,56 +164,161 @@ def normalizza_testo(testo):
 
 def normalizza_link(href):
 
-    return urljoin(
+    link = urljoin(
         BASE_URL,
         href
     )
 
+    parti = urlsplit(
+        link
+    )
 
-def link_potenzialmente_utile(
-    titolo,
-    link
-):
-
-    testo = (
-        titolo
-        + " "
-        + link
-    ).lower()
-
-    return any(
-        parola in testo
-        for parola in PAROLE_UTILI
+    return urlunsplit(
+        (
+            parti.scheme,
+            parti.netloc,
+            parti.path,
+            parti.query,
+            ""
+        )
     )
 
 
-def analizza_pagina(html):
+def trova_contenitore(
+    elemento
+):
+
+    nodo = elemento
+
+    for _ in range(7):
+
+        if nodo is None:
+
+            break
+
+        testo = normalizza_testo(
+            nodo.get_text(
+                " ",
+                strip=True
+            )
+        )
+
+        testo_lower = testo.lower()
+
+        if (
+            "scadenza" in testo_lower
+            and len(testo) < 2500
+        ):
+
+            return nodo
+
+        nodo = nodo.parent
+
+    return elemento.parent
+
+
+def e_link_documento(link):
+
+    link_lower = link.lower()
+
+    estensioni = [
+        ".pdf",
+        ".doc",
+        ".docx"
+    ]
+
+    return any(
+        estensione in link_lower
+        for estensione in estensioni
+    )
+
+
+def e_prima_fascia(testo):
+
+    testo_lower = testo.lower()
+
+    if any(
+        parola in testo_lower
+        for parola in PAROLE_DA_ESCLUDERE
+    ):
+
+        return False
+
+    return any(
+        parola in testo_lower
+        for parola in PAROLE_PRIMA_FASCIA
+    )
+
+
+def contiene_area_interesse(testo):
+
+    testo_lower = testo.lower()
+
+    return any(
+        parola in testo_lower
+        for parola in PAROLE_AREA
+    )
+
+
+def estrai_scadenze(testo):
+
+    risultati = []
+
+    pattern_numerico = re.compile(
+        r"scadenza\s+"
+        r"(\d{1,2}/\d{1,2}/\d{4})",
+        re.IGNORECASE
+    )
+
+    pattern_testuale = re.compile(
+        r"scadenza\s+"
+        r"(\d{1,2}\s+"
+        r"(?:gennaio|febbraio|marzo|aprile|maggio|"
+        r"giugno|luglio|agosto|settembre|ottobre|"
+        r"novembre|dicembre)\s+\d{4})",
+        re.IGNORECASE
+    )
+
+    risultati.extend(
+        pattern_numerico.findall(
+            testo
+        )
+    )
+
+    risultati.extend(
+        pattern_testuale.findall(
+            testo
+        )
+    )
+
+    return risultati
+
+
+def analizza_pagina(
+    nome,
+    html
+):
 
     soup = BeautifulSoup(
         html,
         "html.parser"
     )
 
-    testo = soup.get_text(
-        "\n",
-        strip=True
+    print(
+        "\n========================================"
     )
 
     print(
-        "\n=== TESTO PAGINA CATTOLICA ROMA ===\n"
+        "SEZIONE:",
+        nome
     )
 
     print(
-        testo[:8000]
+        "========================================\n"
     )
 
-    print(
-        "\n=== LINK POTENZIALMENTE UTILI ===\n"
-    )
-
+    risultati = []
     links_visti = set()
-
-    totale = 0
 
     for elemento in soup.find_all(
         "a",
@@ -151,13 +327,6 @@ def analizza_pagina(html):
 
         href = elemento.get(
             "href"
-        )
-
-        titolo = normalizza_testo(
-            elemento.get_text(
-                " ",
-                strip=True
-            )
         )
 
         if not href:
@@ -172,9 +341,40 @@ def analizza_pagina(html):
 
             continue
 
-        if not link_potenzialmente_utile(
-            titolo,
+        if not e_link_documento(
             link
+        ):
+
+            continue
+
+        contenitore = trova_contenitore(
+            elemento
+        )
+
+        testo_blocco = normalizza_testo(
+            contenitore.get_text(
+                " ",
+                strip=True
+            )
+        )
+
+        titolo_link = normalizza_testo(
+            elemento.get_text(
+                " ",
+                strip=True
+            )
+        )
+
+        testo_completo = (
+            titolo_link
+            + " "
+            + testo_blocco
+            + " "
+            + link
+        )
+
+        if not e_prima_fascia(
+            testo_completo
         ):
 
             continue
@@ -183,137 +383,67 @@ def analizza_pagina(html):
             link
         )
 
-        totale += 1
+        scadenze = estrai_scadenze(
+            testo_blocco
+        )
+
+        risultato = {
+            "titolo": titolo_link,
+            "testo": testo_blocco,
+            "link": link,
+            "scadenze": scadenze,
+            "area": contiene_area_interesse(
+                testo_completo
+            )
+        }
+
+        risultati.append(
+            risultato
+        )
+
+    print(
+        "PROCEDURE DI PRIMA FASCIA TROVATE:",
+        len(risultati)
+    )
+
+    for numero, risultato in enumerate(
+        risultati,
+        start=1
+    ):
 
         print(
-            "TITOLO:",
-            titolo
+            "\n----------------------------------------"
+        )
+
+        print(
+            "PROCEDURA:",
+            numero
+        )
+
+        print(
+            "TITOLO LINK:",
+            risultato["titolo"]
+        )
+
+        print(
+            "AREA DI INTERESSE:",
+            risultato["area"]
+        )
+
+        print(
+            "SCADENZE:",
+            risultato["scadenze"]
         )
 
         print(
             "LINK:",
-            link
-        )
-
-        print()
-
-    print(
-        "TOTALE LINK POTENZIALMENTE UTILI:",
-        totale
-    )
-
-    print(
-        "\n=== IFRAME TROVATI ===\n"
-    )
-
-    iframe = soup.find_all(
-        "iframe"
-    )
-
-    print(
-        "TOTALE IFRAME:",
-        len(iframe)
-    )
-
-    for elemento in iframe:
-
-        print(
-            "IFRAME:",
-            elemento.get(
-                "src"
-            )
-        )
-
-    print(
-        "\n=== FORM TROVATI ===\n"
-    )
-
-    forms = soup.find_all(
-        "form"
-    )
-
-    print(
-        "TOTALE FORM:",
-        len(forms)
-    )
-
-    for form in forms[:20]:
-
-        print(
-            "ACTION:",
-            form.get(
-                "action"
-            )
+            risultato["link"]
         )
 
         print(
-            "METHOD:",
-            form.get(
-                "method"
-            )
+            "TESTO BLOCCO:",
+            risultato["testo"][:1500]
         )
-
-        print()
-
-    print(
-        "\n=== SCRIPT POTENZIALMENTE UTILI ===\n"
-    )
-
-    totale_script = 0
-
-    for script in soup.find_all(
-        "script"
-    ):
-
-        src = script.get(
-            "src",
-            ""
-        )
-
-        contenuto = script.string or ""
-
-        testo_script = (
-            src
-            + " "
-            + contenuto
-        ).lower()
-
-        if not any(
-            parola in testo_script
-            for parola in [
-                "concor",
-                "bando",
-                "docent",
-                "ajax",
-                "api",
-                "json",
-                "search",
-                "filter"
-            ]
-        ):
-
-            continue
-
-        totale_script += 1
-
-        print(
-            "SRC:",
-            src
-        )
-
-        if contenuto:
-
-            print(
-                "CONTENUTO:",
-                contenuto[:2500]
-            )
-
-        print()
-
-    print(
-        "TOTALE SCRIPT UTILI:",
-        totale_script
-    )
 
 
 # ==========================================
@@ -321,15 +451,43 @@ def analizza_pagina(html):
 # ==========================================
 
 print(
-    "\n=== TEST MONITOR CATTOLICA ROMA ===\n"
+    "\n=== DIAGNOSTICA CATTOLICA ROMA ===\n"
 )
 
-html = scarica_pagina()
+sessione = crea_sessione()
 
-analizza_pagina(
-    html
-)
+for pagina in PAGINE_CATTOLICA_ROMA:
+
+    print(
+        "\n\nControllo:",
+        pagina["nome"]
+    )
+
+    try:
+
+        html = scarica_pagina(
+            sessione,
+            pagina["url"]
+        )
+
+        analizza_pagina(
+            pagina["nome"],
+            html
+        )
+
+    except Exception as errore:
+
+        print(
+            "ERRORE:",
+            pagina["nome"]
+        )
+
+        print(
+            str(
+                errore
+            )
+        )
 
 print(
-    "\n=== FINE TEST CATTOLICA ROMA ===\n"
+    "\n=== FINE DIAGNOSTICA CATTOLICA ROMA ==="
 )
