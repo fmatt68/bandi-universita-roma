@@ -40,7 +40,11 @@ jobs:
         env:
           EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          
+      - name: Test Cattolica Roma
+        run: python monitor_cattolica.py
 
+        
       - name: Commit storico aggiornato
         run: |
           git config --global user.name "github-actions"
@@ -50,6 +54,7 @@ jobs:
           git add storico_unicamillus.json
           git add storico_torvergata.json
           git add storico_unicampus.json
+          git add storico_cattolica.json
 
           git diff --staged --quiet || git commit -m "Aggiorna storico.json"
 
