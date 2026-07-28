@@ -43,7 +43,9 @@ jobs:
           
       - name: Test Cattolica Roma
         run: python monitor_cattolica.py
-
+        env:
+          EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
         
       - name: Commit storico aggiornato
         run: |
