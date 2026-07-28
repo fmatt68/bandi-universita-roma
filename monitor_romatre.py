@@ -187,4 +187,4 @@ def crea_sessione():
                 "application/xml;q=0.9,*/*;q=0.8"
             ),
             "Accept-Language": (
-                "it-IT
+                "it-IT"
