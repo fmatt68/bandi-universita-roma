@@ -1,16 +1,17 @@
 import re
+
 from html import unescape
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import requests
 from bs4 import BeautifulSoup
+from bs4.element import NavigableString, Tag
 
 
 PAGINE_ROMATRE = [
     {
         "nome": (
-            "Ateneo - Concorsi personale "
-            "docente e ricercatore"
+            "Personale docente e ricercatore"
         ),
         "tipo": "professori",
         "url": (
@@ -22,19 +23,7 @@ PAGINE_ROMATRE = [
     },
     {
         "nome": (
-            "Dipartimento di Scienze "
-            "- Bandi e concorsi"
-        ),
-        "tipo": "docenza",
-        "url": (
-            "https://scienze.uniroma3.it/"
-            "dipartimento/bandi-e-concorsi/"
-        ),
-    },
-    {
-        "nome": (
-            "Dipartimento di Scienze "
-            "- Incarichi di insegnamento"
+            "Scienze - Incarichi di insegnamento"
         ),
         "tipo": "docenza",
         "url": (
@@ -45,7 +34,7 @@ PAGINE_ROMATRE = [
     },
     {
         "nome": (
-            "Dipartimento di Matematica e Fisica "
+            "Matematica e Fisica "
             "- Incarichi didattici"
         ),
         "tipo": "docenza",
@@ -58,12 +47,13 @@ PAGINE_ROMATRE = [
     },
     {
         "nome": (
-            "Ingegneria Civile, Informatica "
-            "e Tecnologie Aeronautiche"
+            "Ingegneria Civile e Informatica "
+            "- Bandi e concorsi"
         ),
         "tipo": "docenza",
         "url": (
-            "https://ingegneriacivileinformaticatecnologieaeronautiche."
+            "https://"
+            "ingegneriacivileinformaticatecnologieaeronautiche."
             "uniroma3.it/dipartimento/bandi-e-concorsi/"
         ),
     },
@@ -77,8 +67,6 @@ PAROLE_PRIMA_FASCIA = [
     "professoressa ordinaria",
     "professore di ruolo di prima fascia",
     "professoressa di ruolo di prima fascia",
-    "chiamata di professore di prima fascia",
-    "chiamata di professori di prima fascia",
 ]
 
 
@@ -88,18 +76,27 @@ PAROLE_DOCENZA = [
     "docenza a contratto",
     "professore a contratto",
     "professoressa a contratto",
-    "professori a contratto",
     "incarico di insegnamento",
     "incarichi di insegnamento",
-    "conferimento di incarichi di insegnamento",
-    "conferimento incarichi di insegnamento",
     "incarico didattico",
     "incarichi didattici",
     "didattica integrativa",
     "supporto alla didattica",
     "attivita didattica",
     "attività didattica",
-    "selezione per titoli",
+]
+
+
+PAROLE_BANDO = [
+    "bando",
+    "avviso",
+    "procedura selettiva",
+    "procedura di selezione",
+    "selezione pubblica",
+    "conferimento di incarichi",
+    "conferimento incarichi",
+    "ricognizione interna",
+    "concorsi (albo pretorio)",
 ]
 
 
@@ -143,15 +140,20 @@ PAROLE_ACCESSORIE = [
     "commissione",
     "verbale",
     "approvazione atti",
+    "rettifica",
 ]
 
 
 PAROLE_RICOGNIZIONE_INTERNA = [
     "ricognizione interna",
     "personale interno",
+    "personale dell'ateneo",
+    "personale dell’ateneo",
     "personale in servizio presso",
     "risorse interne all'ateneo",
     "risorse interne all’ateneo",
+    "mansioni esigibili da personale dell'ateneo",
+    "mansioni esigibili da personale dell’ateneo",
 ]
 
 
@@ -273,6 +275,75 @@ def contiene_parola(
     )
 
 
+def pulisci_pagina(soup):
+
+    selettori = [
+        "script",
+        "style",
+        "header",
+        "footer",
+        "nav",
+        "aside",
+        "form",
+        ".menu",
+        ".main-menu",
+        ".navigation",
+        ".navbar",
+        ".breadcrumb",
+        ".breadcrumbs",
+        ".sidebar",
+        ".site-header",
+        ".site-footer",
+        "[role='navigation']",
+        "[aria-label*='menu' i]",
+    ]
+
+    for selettore in selettori:
+
+        for elemento in soup.select(
+            selettore
+        ):
+
+            elemento.decompose()
+
+
+def trova_contenuto_principale(soup):
+
+    selettori = [
+        "main",
+        "article",
+        "#content",
+        "#main-content",
+        ".entry-content",
+        ".page-content",
+        ".content-area",
+        "[role='main']",
+    ]
+
+    for selettore in selettori:
+
+        elemento = soup.select_one(
+            selettore
+        )
+
+        if elemento is None:
+
+            continue
+
+        testo = normalizza_testo(
+            elemento.get_text(
+                " ",
+                strip=True,
+            )
+        )
+
+        if len(testo) >= 50:
+
+            return elemento
+
+    return soup.body or soup
+
+
 def e_link_documento(link):
 
     link_lower = link.lower()
@@ -282,7 +353,9 @@ def e_link_documento(link):
         ".doc",
         ".docx",
         "download.aspx",
-        "?hd=",
+        "albopretorio",
+        "traspare.com/news/",
+        "uniroma3.traspare.com",
     ]
 
     return any(
@@ -291,94 +364,122 @@ def e_link_documento(link):
     )
 
 
-def e_link_potenzialmente_utile(
-    titolo,
-    contesto,
-    link,
-):
+def testo_locale_link(elemento):
 
-    testo = normalizza_testo(
-        titolo
-        + " "
-        + contesto
-        + " "
-        + unescape(
-            link
-        )
-    )
+    for nodo in elemento.parents:
 
-    if contiene_parola(
-        titolo,
-        PAROLE_ACCESSORIE,
-    ):
+        if not isinstance(
+            nodo,
+            Tag,
+        ):
 
-        return False
+            continue
 
-    return any(
-        [
-            contiene_parola(
-                testo,
-                PAROLE_PRIMA_FASCIA,
-            ),
-            contiene_parola(
-                testo,
-                PAROLE_DOCENZA,
-            ),
-            contiene_parola(
-                testo,
-                PAROLE_AREA,
-            ),
-        ]
-    )
+        if nodo.name in [
+            "li",
+            "p",
+            "section",
+            "article",
+        ]:
 
+            testo = normalizza_testo(
+                nodo.get_text(
+                    " ",
+                    strip=True,
+                )
+            )
 
-def trova_contenitore(elemento):
+            if (
+                20
+                <= len(testo)
+                <= 2500
+            ):
 
-    nodo = elemento
+                return testo
 
-    miglior_nodo = elemento.parent
-
-    for _ in range(7):
-
-        if nodo is None:
+        if nodo.name == "main":
 
             break
 
-        testo = normalizza_testo(
-            nodo.get_text(
-                " ",
-                strip=True,
-            )
-        )
+    precedenti = []
 
-        if (
-            testo
-            and len(testo) <= 4000
+    for vicino in elemento.previous_elements:
+
+        if len(precedenti) >= 12:
+
+            break
+
+        if isinstance(
+            vicino,
+            NavigableString,
         ):
 
-            miglior_nodo = nodo
+            testo = normalizza_testo(
+                vicino
+            )
 
-        contiene_tipologia = (
-            contiene_parola(
-                testo,
-                PAROLE_DOCENZA,
-            )
-            or contiene_parola(
-                testo,
-                PAROLE_PRIMA_FASCIA,
-            )
-        )
+            if testo:
+
+                precedenti.append(
+                    testo
+                )
+
+    precedenti.reverse()
+
+    successivi = []
+
+    for vicino in elemento.next_elements:
+
+        if len(successivi) >= 12:
+
+            break
 
         if (
-            contiene_tipologia
-            and len(testo) <= 4000
+            isinstance(
+                vicino,
+                Tag,
+            )
+            and vicino.name == "a"
+            and vicino is not elemento
         ):
 
-            return nodo
+            href = vicino.get(
+                "href",
+                "",
+            )
 
-        nodo = nodo.parent
+            if (
+                href
+                and e_link_documento(
+                    href
+                )
+            ):
 
-    return miglior_nodo
+                break
+
+        if isinstance(
+            vicino,
+            NavigableString,
+        ):
+
+            testo = normalizza_testo(
+                vicino
+            )
+
+            if testo:
+
+                successivi.append(
+                    testo
+                )
+
+    testo_locale = normalizza_testo(
+        " ".join(
+            precedenti
+            + successivi
+        )
+    )
+
+    return testo_locale[:3000]
 
 
 def estrai_scadenze(testo):
@@ -390,6 +491,8 @@ def estrai_scadenze(testo):
             r"scadenza"
             r"(?:\s+presentazione\s+(?:della\s+)?domanda)?"
             r"\s*:?\s*"
+            r"(?:entro\s+e\s+non\s+oltre\s+"
+            r"(?:il\s+giorno\s+)?)?"
             r"(\d{1,2}/\d{1,2}/\d{4})",
             re.IGNORECASE,
         ),
@@ -397,23 +500,16 @@ def estrai_scadenze(testo):
             r"scadenza"
             r"(?:\s+presentazione\s+(?:della\s+)?domanda)?"
             r"\s*:?\s*"
+            r"(?:entro\s+e\s+non\s+oltre\s+"
+            r"(?:il\s+giorno\s+)?)?"
             r"(\d{1,2}\s+(?:"
             + MESI_ITALIANI
             + r")\s+\d{4})",
             re.IGNORECASE,
         ),
         re.compile(
-            r"entro\s+(?:e\s+non\s+oltre\s+)?"
+            r"entro\s+e\s+non\s+oltre\s+"
             r"(?:il\s+giorno\s+)?"
-            r"(\d{1,2}\s+(?:"
-            + MESI_ITALIANI
-            + r")\s+\d{4})",
-            re.IGNORECASE,
-        ),
-        re.compile(
-            r"termine\s+invio\s+domande"
-            r"\s*:?\s*"
-            r"(?:ore\s+\d{1,2}[:.]\d{2}\s+del\s+)?"
             r"(\d{1,2}\s+(?:"
             + MESI_ITALIANI
             + r")\s+\d{4})",
@@ -440,6 +536,61 @@ def estrai_scadenze(testo):
     return risultati
 
 
+def titolo_accessorio(titolo):
+
+    return contiene_parola(
+        titolo,
+        PAROLE_ACCESSORIE,
+    )
+
+
+def candidato_utile(
+    titolo,
+    contesto,
+    link,
+):
+
+    testo = normalizza_testo(
+        titolo
+        + " "
+        + contesto
+        + " "
+        + unescape(
+            link
+        )
+    )
+
+    if titolo_accessorio(
+        titolo
+    ):
+
+        return False
+
+    ha_tipologia = (
+        contiene_parola(
+            testo,
+            PAROLE_BANDO,
+        )
+        or contiene_parola(
+            testo,
+            PAROLE_PRIMA_FASCIA,
+        )
+        or contiene_parola(
+            testo,
+            PAROLE_DOCENZA,
+        )
+    )
+
+    ha_link_utile = e_link_documento(
+        link
+    )
+
+    return (
+        ha_tipologia
+        and ha_link_utile
+    )
+
+
 def analizza_pagina(
     nome,
     tipo,
@@ -452,11 +603,19 @@ def analizza_pagina(
         "html.parser",
     )
 
+    pulisci_pagina(
+        soup
+    )
+
+    contenuto = trova_contenuto_principale(
+        soup
+    )
+
     risultati = []
 
     links_visti = set()
 
-    for elemento in soup.find_all(
+    for elemento in contenuto.find_all(
         "a",
         href=True,
     ):
@@ -489,28 +648,17 @@ def analizza_pagina(
 
             continue
 
-        contenitore = trova_contenitore(
+        contesto = testo_locale_link(
             elemento
         )
 
-        contesto = normalizza_testo(
-            contenitore.get_text(
-                " ",
-                strip=True,
-            )
-        )
-
-        if not e_link_potenzialmente_utile(
+        if not candidato_utile(
             titolo,
             contesto,
             link,
         ):
 
             continue
-
-        links_visti.add(
-            link
-        )
 
         testo_completo = normalizza_testo(
             titolo
@@ -520,13 +668,14 @@ def analizza_pagina(
             + link
         )
 
+        links_visti.add(
+            link
+        )
+
         risultati.append(
             {
                 "titolo": titolo,
                 "link": link,
-                "documento": e_link_documento(
-                    link
-                ),
                 "prima_fascia": contiene_parola(
                     testo_completo,
                     PAROLE_PRIMA_FASCIA,
@@ -569,7 +718,7 @@ def analizza_pagina(
     )
 
     print(
-        "LINK PERTINENTI TROVATI:",
+        "CANDIDATI LOCALI TROVATI:",
         len(
             risultati
         ),
@@ -592,11 +741,6 @@ def analizza_pagina(
         print(
             "TITOLO:",
             risultato["titolo"],
-        )
-
-        print(
-            "DOCUMENTO:",
-            risultato["documento"],
         )
 
         print(
@@ -642,7 +786,7 @@ def analizza_pagina(
 # =========================================================
 
 print(
-    "\n=== DIAGNOSTICA ROMA TRE ===\n"
+    "\n=== DIAGNOSTICA ROMA TRE V2 ===\n"
 )
 
 sessione = crea_sessione()
@@ -688,10 +832,10 @@ for pagina in PAGINE_ROMATRE:
         )
 
 print(
-    "\nTOTALE LINK PERTINENTI:",
+    "\nTOTALE CANDIDATI LOCALI:",
     totale,
 )
 
 print(
-    "\n=== FINE DIAGNOSTICA ROMA TRE ==="
+    "\n=== FINE DIAGNOSTICA ROMA TRE V2 ==="
 )
