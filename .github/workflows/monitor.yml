@@ -55,6 +55,9 @@ jobs:
 
       - name: Test Roma Tre
         run: python monitor_romatre.py
+        env:
+          EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
 
       - name: Commit storico aggiornato
         run: |
