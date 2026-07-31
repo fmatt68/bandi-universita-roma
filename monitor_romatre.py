@@ -1,841 +1,397 @@
+import json
+import os
 import re
-
+import smtplib
+from datetime import date, datetime
+from email.mime.text import MIMEText
 from html import unescape
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import requests
 from bs4 import BeautifulSoup
-from bs4.element import NavigableString, Tag
 
-
-PAGINE_ROMATRE = [
-    {
-        "nome": (
-            "Personale docente e ricercatore"
-        ),
-        "tipo": "professori",
-        "url": (
-            "https://www.uniroma3.it/servizi/"
-            "servizi-al-personale/portale-del-personale/"
-            "concorsi-e-selezioni/"
-            "concorsi-personale-docente-e-ricercatore/"
-        ),
-    },
-    {
-        "nome": (
-            "Scienze - Incarichi di insegnamento"
-        ),
-        "tipo": "docenza",
-        "url": (
-            "https://scienze.uniroma3.it/"
-            "dipartimento/bandi-e-concorsi/"
-            "bandi-per-incarichi-di-insegnamento/"
-        ),
-    },
-    {
-        "nome": (
-            "Matematica e Fisica "
-            "- Incarichi didattici"
-        ),
-        "tipo": "docenza",
-        "url": (
-            "https://matematicafisica.uniroma3.it/"
-            "dipartimento/bandi-e-concorsi/"
-            "bandi-per-incarichi-di-insegnamento-"
-            "e-di-didattica-integrativa/"
-        ),
-    },
-    {
-        "nome": (
-            "Ingegneria Civile e Informatica "
-            "- Bandi e concorsi"
-        ),
-        "tipo": "docenza",
-        "url": (
-            "https://"
-            "ingegneriacivileinformaticatecnologieaeronautiche."
-            "uniroma3.it/dipartimento/bandi-e-concorsi/"
-        ),
-    },
+BASE_URL = "https://uniroma3.traspare.com"
+PAGINE_FONTE = [
+    "https://uniroma3.traspare.com/",
+    "https://uniroma3.traspare.com/albo",
 ]
-
+FILE_STORICO = "storico_romatre.json"
+EMAIL_ADDRESS = os.getenv("EMAIL_ADDRESS")
+EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
 
 PAROLE_PRIMA_FASCIA = [
-    "prima fascia",
-    "i fascia",
-    "professore ordinario",
-    "professoressa ordinaria",
-    "professore di ruolo di prima fascia",
+    "prima fascia", "i fascia", "professore ordinario",
+    "professoressa ordinaria", "professore di ruolo di prima fascia",
     "professoressa di ruolo di prima fascia",
 ]
-
-
 PAROLE_DOCENZA = [
-    "docente a contratto",
-    "docenti a contratto",
-    "docenza a contratto",
-    "professore a contratto",
-    "professoressa a contratto",
-    "incarico di insegnamento",
-    "incarichi di insegnamento",
-    "incarico didattico",
-    "incarichi didattici",
-    "didattica integrativa",
-    "supporto alla didattica",
-    "attivita didattica",
-    "attività didattica",
+    "docente a contratto", "docenti a contratto", "docenza a contratto",
+    "professore a contratto", "professoressa a contratto",
+    "incarico di insegnamento", "incarichi di insegnamento",
+    "incarico didattico", "incarichi didattici", "didattica integrativa",
+    "supporto alla didattica", "attivita didattica", "attività didattica",
+    "conferimento di incarichi didattici",
+    "conferimento di incarichi di insegnamento",
 ]
-
-
-PAROLE_BANDO = [
-    "bando",
-    "avviso",
-    "procedura selettiva",
-    "procedura di selezione",
-    "selezione pubblica",
-    "conferimento di incarichi",
-    "conferimento incarichi",
-    "ricognizione interna",
-    "concorsi (albo pretorio)",
-]
-
-
 PAROLE_AREA = [
-    "meds-",
-    "medf-",
-    "bios-",
-    "mvet-",
-    "iinf-",
-    "phys-",
-    "ibio-",
-    "bio/",
-    "med/",
-    "vet/",
-    "fis/",
-    "ing-inf/",
-    "biologia",
-    "biotecnologie",
-    "biochimica",
-    "bioinformatica",
-    "fisica",
-    "informatica",
-    "ingegneria biomedica",
-    "bioingegneria",
-    "scienze biologiche",
-    "scienze della vita",
-    "laboratorio",
+    "meds-", "medf-", "bios-", "mvet-", "iinf-", "phys-", "ibio-",
+    "bio/", "med/", "vet/", "fis/", "ing-inf/", "info-",
+    "biologia", "biotecnologie", "biochimica", "bioinformatica",
+    "fisica", "informatica", "ingegneria biomedica", "bioingegneria",
+    "scienze biologiche", "scienze della vita", "laboratorio",
 ]
-
-
-PAROLE_ACCESSORIE = [
-    "allegato",
-    "fac-simile",
-    "fac simile",
-    "modello cv",
-    "domanda di partecipazione",
-    "autocertificazione",
-    "esito",
-    "graduatoria",
-    "vincitori",
-    "commissione",
-    "verbale",
-    "approvazione atti",
-    "rettifica",
+DIPARTIMENTI_INTERESSE = [
+    "dipartimento di scienze", "dipartimento di matematica e fisica",
+    "matematica e fisica", "ingegneria civile, informatica",
+    "ingegneria civile e informatica", "tecnologie aeronautiche",
+    "ingegneria industriale, elettronica e meccanica",
 ]
-
-
-PAROLE_RICOGNIZIONE_INTERNA = [
-    "ricognizione interna",
-    "personale interno",
-    "personale dell'ateneo",
-    "personale dell’ateneo",
-    "personale in servizio presso",
-    "risorse interne all'ateneo",
-    "risorse interne all’ateneo",
+PAROLE_INTERNE = [
+    "ricognizione interna", "personale interno", "personale dell'ateneo",
+    "personale dell’ateneo", "personale in servizio presso",
     "mansioni esigibili da personale dell'ateneo",
     "mansioni esigibili da personale dell’ateneo",
 ]
-
-
-MESI_ITALIANI = (
-    "gennaio|febbraio|marzo|aprile|maggio|"
-    "giugno|luglio|agosto|settembre|ottobre|"
-    "novembre|dicembre"
-)
-
-
-def crea_sessione():
-
-    sessione = requests.Session()
-
-    sessione.headers.update(
-        {
-            "User-Agent": (
-                "Mozilla/5.0 "
-                "(X11; Linux x86_64) "
-                "AppleWebKit/537.36 "
-                "(KHTML, like Gecko) "
-                "Chrome/126.0 Safari/537.36"
-            ),
-            "Accept": (
-                "text/html,application/xhtml+xml,"
-                "application/xml;q=0.9,*/*;q=0.8"
-            ),
-            "Accept-Language": (
-                "it-IT,it;q=0.9,en;q=0.8"
-            ),
-        }
-    )
-
-    return sessione
-
-
-def scarica_pagina(
-    sessione,
-    url,
-):
-
-    risposta = sessione.get(
-        url,
-        timeout=60,
-    )
-
-    print(
-        "Status code:",
-        risposta.status_code,
-    )
-
-    print(
-        "URL finale:",
-        risposta.url,
-    )
-
-    print(
-        "Dimensione HTML:",
-        len(
-            risposta.text
-        ),
-    )
-
-    risposta.raise_for_status()
-
-    return risposta.text
+PAROLE_FASI_SUCCESSIVE = [
+    "avviso colloquio", "avviso di colloquio", "discussione pubblica",
+    "commissione", "verbale", "approvazione atti", "approvazione degli atti",
+    "graduatoria", "esito", "vincitore", "vincitrice", "rettifica",
+    "convocazione", "rinuncia", "revoca",
+]
+PAROLE_ACCESSORIE = [
+    "allegato", "fac-simile", "fac simile", "modello cv",
+    "domanda di partecipazione", "autocertificazione", "informativa privacy",
+]
+MESI = {
+    "gennaio": 1, "febbraio": 2, "marzo": 3, "aprile": 4,
+    "maggio": 5, "giugno": 6, "luglio": 7, "agosto": 8,
+    "settembre": 9, "ottobre": 10, "novembre": 11, "dicembre": 12,
+}
 
 
 def normalizza_testo(testo):
-
     if testo is None:
-
         return ""
-
-    return " ".join(
-        unescape(
-            str(
-                testo
-            )
-        ).split()
-    )
+    return " ".join(unescape(str(testo)).split())
 
 
-def normalizza_link(
-    base_url,
-    href,
-):
-
-    link = urljoin(
-        base_url,
-        href,
-    )
-
-    parti = urlsplit(
-        link
-    )
-
-    return urlunsplit(
-        (
-            parti.scheme,
-            parti.netloc,
-            parti.path,
-            parti.query,
-            "",
-        )
-    )
+def normalizza_link(base, href):
+    link = urljoin(base, href)
+    parti = urlsplit(link)
+    return urlunsplit((parti.scheme, parti.netloc, parti.path, parti.query, ""))
 
 
-def contiene_parola(
-    testo,
-    parole,
-):
-
-    testo_lower = testo.lower()
-
-    return any(
-        parola in testo_lower
-        for parola in parole
-    )
+def contiene(testo, parole):
+    testo = testo.lower()
+    return any(parola in testo for parola in parole)
 
 
-def pulisci_pagina(soup):
+def crea_sessione():
+    sessione = requests.Session()
+    sessione.headers.update({
+        "User-Agent": (
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/126.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
+    })
+    return sessione
 
-    selettori = [
-        "script",
-        "style",
-        "header",
-        "footer",
-        "nav",
-        "aside",
-        "form",
-        ".menu",
-        ".main-menu",
-        ".navigation",
-        ".navbar",
-        ".breadcrumb",
-        ".breadcrumbs",
-        ".sidebar",
-        ".site-header",
-        ".site-footer",
-        "[role='navigation']",
-        "[aria-label*='menu' i]",
-    ]
 
-    for selettore in selettori:
+def scarica(sessione, url):
+    risposta = sessione.get(url, timeout=60)
+    risposta.raise_for_status()
+    print("Pagina letta:", risposta.url)
+    return risposta.text
 
-        for elemento in soup.select(
-            selettore
-        ):
 
+def carica_storico():
+    try:
+        with open(FILE_STORICO, "r", encoding="utf-8") as file:
+            dati = json.load(file)
+        if not isinstance(dati, dict):
+            raise ValueError("Storico non valido")
+        if not isinstance(dati.get("bandi_gia_segnalati"), list):
+            dati["bandi_gia_segnalati"] = []
+        return dati
+    except (FileNotFoundError, json.JSONDecodeError, ValueError):
+        return {"bandi_gia_segnalati": []}
+
+
+def salva_storico(storico):
+    with open(FILE_STORICO, "w", encoding="utf-8") as file:
+        json.dump(storico, file, indent=2, ensure_ascii=False)
+
+
+def elimina_parti_comuni(soup):
+    for selettore in [
+        "script", "style", "header", "footer", "nav", "aside", "form",
+        ".navbar", ".breadcrumb", ".breadcrumbs", ".sidebar", ".cookie",
+        ".modal", "[role='navigation']",
+    ]:
+        for elemento in soup.select(selettore):
             elemento.decompose()
 
 
-def trova_contenuto_principale(soup):
+def estrai_link_avvisi(html, url_fonte):
+    soup = BeautifulSoup(html, "html.parser")
+    elimina_parti_comuni(soup)
+    candidati = {}
 
-    selettori = [
-        "main",
-        "article",
-        "#content",
-        "#main-content",
-        ".entry-content",
-        ".page-content",
-        ".content-area",
-        "[role='main']",
-    ]
+    for a in soup.find_all("a", href=True):
+        href = a.get("href", "")
+        link = normalizza_link(url_fonte, href)
+        titolo = normalizza_testo(a.get_text(" ", strip=True))
+        testo_link = f"{titolo} {link}".lower()
 
+        dettaglio_valido = (
+            "/news/" in link.lower()
+            or "/albo/" in link.lower()
+            or "albo=" in link.lower()
+            or "id=" in link.lower() and "albo" in link.lower()
+        )
+        if not dettaglio_valido:
+            continue
+        if any(x in testo_link for x in ["login", "accedi", "privacy", "cookie"]):
+            continue
+        if not titolo:
+            titolo = "Avviso Roma Tre"
+        candidati[link] = {"titolo_elenco": titolo, "link": link}
+
+    return list(candidati.values())
+
+
+def scegli_titolo(soup, titolo_elenco):
+    selettori = ["h1", "h2", ".title", ".news-title", ".page-title"]
+    esclusi = {"news", "albo pretorio", "avviso generico", "home"}
     for selettore in selettori:
-
-        elemento = soup.select_one(
-            selettore
-        )
-
-        if elemento is None:
-
-            continue
-
-        testo = normalizza_testo(
-            elemento.get_text(
-                " ",
-                strip=True,
-            )
-        )
-
-        if len(testo) >= 50:
-
-            return elemento
-
-    return soup.body or soup
-
-
-def e_link_documento(link):
-
-    link_lower = link.lower()
-
-    indicatori = [
-        ".pdf",
-        ".doc",
-        ".docx",
-        "download.aspx",
-        "albopretorio",
-        "traspare.com/news/",
-        "uniroma3.traspare.com",
-    ]
-
-    return any(
-        indicatore in link_lower
-        for indicatore in indicatori
-    )
-
-
-def testo_locale_link(elemento):
-
-    for nodo in elemento.parents:
-
-        if not isinstance(
-            nodo,
-            Tag,
-        ):
-
-            continue
-
-        if nodo.name in [
-            "li",
-            "p",
-            "section",
-            "article",
-        ]:
-
-            testo = normalizza_testo(
-                nodo.get_text(
-                    " ",
-                    strip=True,
-                )
-            )
-
-            if (
-                20
-                <= len(testo)
-                <= 2500
-            ):
-
+        for nodo in soup.select(selettore):
+            testo = normalizza_testo(nodo.get_text(" ", strip=True))
+            if len(testo) >= 15 and testo.lower() not in esclusi:
                 return testo
+    return titolo_elenco
 
-        if nodo.name == "main":
 
-            break
-
-    precedenti = []
-
-    for vicino in elemento.previous_elements:
-
-        if len(precedenti) >= 12:
-
-            break
-
-        if isinstance(
-            vicino,
-            NavigableString,
-        ):
-
-            testo = normalizza_testo(
-                vicino
-            )
-
-            if testo:
-
-                precedenti.append(
-                    testo
-                )
-
-    precedenti.reverse()
-
-    successivi = []
-
-    for vicino in elemento.next_elements:
-
-        if len(successivi) >= 12:
-
-            break
-
-        if (
-            isinstance(
-                vicino,
-                Tag,
-            )
-            and vicino.name == "a"
-            and vicino is not elemento
-        ):
-
-            href = vicino.get(
-                "href",
-                "",
-            )
-
-            if (
-                href
-                and e_link_documento(
-                    href
-                )
-            ):
-
-                break
-
-        if isinstance(
-            vicino,
-            NavigableString,
-        ):
-
-            testo = normalizza_testo(
-                vicino
-            )
-
-            if testo:
-
-                successivi.append(
-                    testo
-                )
-
-    testo_locale = normalizza_testo(
-        " ".join(
-            precedenti
-            + successivi
-        )
+def estrai_date(testo):
+    trovate = []
+    pattern_num = re.compile(
+        r"(?:scadenza|termine)(?:\s+presentazione\s+(?:della\s+)?domanda)?"
+        r"[^0-9]{0,80}(\d{1,2})[/.](\d{1,2})[/.](\d{4})",
+        re.IGNORECASE,
+    )
+    pattern_testo = re.compile(
+        r"(?:scadenza|termine|entro\s+e\s+non\s+oltre)"
+        r"[^0-9]{0,100}(\d{1,2})\s+"
+        r"(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|"
+        r"settembre|ottobre|novembre|dicembre)\s+(\d{4})",
+        re.IGNORECASE,
     )
 
-    return testo_locale[:3000]
+    for g, m, a in pattern_num.findall(testo):
+        try:
+            valore = date(int(a), int(m), int(g))
+            if valore not in trovate:
+                trovate.append(valore)
+        except ValueError:
+            pass
+
+    for g, mese, a in pattern_testo.findall(testo):
+        try:
+            valore = date(int(a), MESI[mese.lower()], int(g))
+            if valore not in trovate:
+                trovate.append(valore)
+        except (ValueError, KeyError):
+            pass
+    return trovate
 
 
-def estrai_scadenze(testo):
+def scegli_scadenza(date_trovate):
+    if not date_trovate:
+        return None
+    future = [d for d in date_trovate if d >= date.today()]
+    return min(future) if future else max(date_trovate)
 
-    risultati = []
 
+def estrai_pubblicazione(testo):
     patterns = [
-        re.compile(
-            r"scadenza"
-            r"(?:\s+presentazione\s+(?:della\s+)?domanda)?"
-            r"\s*:?\s*"
-            r"(?:entro\s+e\s+non\s+oltre\s+"
-            r"(?:il\s+giorno\s+)?)?"
-            r"(\d{1,2}/\d{1,2}/\d{4})",
-            re.IGNORECASE,
-        ),
-        re.compile(
-            r"scadenza"
-            r"(?:\s+presentazione\s+(?:della\s+)?domanda)?"
-            r"\s*:?\s*"
-            r"(?:entro\s+e\s+non\s+oltre\s+"
-            r"(?:il\s+giorno\s+)?)?"
-            r"(\d{1,2}\s+(?:"
-            + MESI_ITALIANI
-            + r")\s+\d{4})",
-            re.IGNORECASE,
-        ),
-        re.compile(
-            r"entro\s+e\s+non\s+oltre\s+"
-            r"(?:il\s+giorno\s+)?"
-            r"(\d{1,2}\s+(?:"
-            + MESI_ITALIANI
-            + r")\s+\d{4})",
-            re.IGNORECASE,
-        ),
+        re.compile(r"pubblicat[oa][^0-9]{0,30}(\d{1,2})/(\d{1,2})/(\d{4})", re.I),
+        re.compile(r"avviso\s+generico[^0-9]{0,30}(\d{1,2})/(\d{1,2})/(\d{4})", re.I),
     ]
-
     for pattern in patterns:
-
-        for risultato in pattern.findall(
-            testo
-        ):
-
-            risultato = normalizza_testo(
-                risultato
-            )
-
-            if risultato not in risultati:
-
-                risultati.append(
-                    risultato
-                )
-
-    return risultati
+        match = pattern.search(testo)
+        if match:
+            g, m, a = match.groups()
+            try:
+                return date(int(a), int(m), int(g))
+            except ValueError:
+                return None
+    return None
 
 
-def titolo_accessorio(titolo):
+def estrai_documento_principale(soup, url_dettaglio):
+    possibili = []
+    for a in soup.find_all("a", href=True):
+        titolo = normalizza_testo(a.get_text(" ", strip=True))
+        link = normalizza_link(url_dettaglio, a.get("href", ""))
+        testo = f"{titolo} {link}".lower()
+        if not any(est in link.lower() for est in [".pdf", ".doc", ".docx", "attachment"]):
+            continue
+        if contiene(titolo, PAROLE_ACCESSORIE):
+            continue
+        punteggio = 0
+        if "bando" in testo:
+            punteggio += 5
+        if "avviso" in testo:
+            punteggio += 3
+        if contiene(testo, PAROLE_DOCENZA + PAROLE_PRIMA_FASCIA):
+            punteggio += 4
+        possibili.append((punteggio, link))
+    if not possibili:
+        return url_dettaglio
+    possibili.sort(key=lambda x: x[0], reverse=True)
+    return possibili[0][1]
 
-    return contiene_parola(
-        titolo,
-        PAROLE_ACCESSORIE,
-    )
+
+def analizza_avviso(sessione, candidato):
+    try:
+        html = scarica(sessione, candidato["link"])
+    except Exception as errore:
+        print("Errore dettaglio:", candidato["link"], str(errore))
+        return None
+
+    soup = BeautifulSoup(html, "html.parser")
+    elimina_parti_comuni(soup)
+    titolo = scegli_titolo(soup, candidato["titolo_elenco"])
+    testo = normalizza_testo(soup.get_text(" ", strip=True))
+    testo_completo = normalizza_testo(f"{titolo} {testo} {candidato['link']}")
+
+    if contiene(testo_completo, PAROLE_FASI_SUCCESSIVE):
+        return None
+    if contiene(testo_completo, PAROLE_INTERNE):
+        print("ESCLUSA ricognizione interna:", titolo)
+        return None
+
+    prima_fascia = contiene(testo_completo, PAROLE_PRIMA_FASCIA)
+    docenza = contiene(testo_completo, PAROLE_DOCENZA)
+    if not (prima_fascia or docenza):
+        return None
+
+    area = contiene(testo_completo, PAROLE_AREA)
+    dipartimento_pertinente = contiene(testo_completo, DIPARTIMENTI_INTERESSE)
+    if not (area or dipartimento_pertinente):
+        return None
+
+    scadenza = scegli_scadenza(estrai_date(testo_completo))
+    if scadenza is None:
+        print("IGNORATO senza scadenza individuabile:", titolo)
+        return None
+    if scadenza < date.today():
+        return None
+
+    documento = estrai_documento_principale(soup, candidato["link"])
+    pubblicazione = estrai_pubblicazione(testo_completo)
+
+    return {
+        "titolo": titolo,
+        "tipologia": "Prima fascia" if prima_fascia else "Docenza/incarico didattico",
+        "link": candidato["link"],
+        "documento": documento,
+        "scadenza": scadenza,
+        "pubblicazione": pubblicazione,
+        "descrizione": testo[:1600],
+    }
 
 
-def candidato_utile(
-    titolo,
-    contesto,
-    link,
-):
-
-    testo = normalizza_testo(
-        titolo
-        + " "
-        + contesto
-        + " "
-        + unescape(
-            link
-        )
-    )
-
-    if titolo_accessorio(
-        titolo
-    ):
-
+def invia_email(bandi):
+    if not EMAIL_ADDRESS or not EMAIL_PASSWORD:
+        print("Credenziali email non configurate")
         return False
 
-    ha_tipologia = (
-        contiene_parola(
-            testo,
-            PAROLE_BANDO,
-        )
-        or contiene_parola(
-            testo,
-            PAROLE_PRIMA_FASCIA,
-        )
-        or contiene_parola(
-            testo,
-            PAROLE_DOCENZA,
-        )
-    )
+    righe = [
+        "Nuovi bandi Roma Tre", "",
+        "Sono state individuate nuove procedure aperte e pertinenti.", "",
+    ]
+    for i, bando in enumerate(bandi, 1):
+        righe.extend([
+            "========================================",
+            f"BANDO {i}",
+            "========================================",
+            f"Tipologia: {bando['tipologia']}",
+            "Pubblicazione: " + (
+                bando["pubblicazione"].strftime("%d/%m/%Y")
+                if bando["pubblicazione"] else "Non specificata"
+            ),
+            f"Scadenza: {bando['scadenza'].strftime('%d/%m/%Y')}",
+            "", bando["titolo"], "", bando["descrizione"], "",
+            "Pagina dell'avviso:", bando["link"], "",
+            "Documento principale:", bando["documento"], "",
+        ])
 
-    ha_link_utile = e_link_documento(
-        link
-    )
+    email = MIMEText("\n".join(righe), "plain", "utf-8")
+    email["Subject"] = "[ROMA TRE] Nuovi bandi"
+    email["From"] = EMAIL_ADDRESS
+    email["To"] = EMAIL_ADDRESS
 
-    return (
-        ha_tipologia
-        and ha_link_utile
-    )
-
-
-def analizza_pagina(
-    nome,
-    tipo,
-    url,
-    html,
-):
-
-    soup = BeautifulSoup(
-        html,
-        "html.parser",
-    )
-
-    pulisci_pagina(
-        soup
-    )
-
-    contenuto = trova_contenuto_principale(
-        soup
-    )
-
-    risultati = []
-
-    links_visti = set()
-
-    for elemento in contenuto.find_all(
-        "a",
-        href=True,
-    ):
-
-        href = elemento.get(
-            "href"
-        )
-
-        if not href:
-
-            continue
-
-        link = normalizza_link(
-            url,
-            href,
-        )
-
-        if link in links_visti:
-
-            continue
-
-        titolo = normalizza_testo(
-            elemento.get_text(
-                " ",
-                strip=True,
-            )
-        )
-
-        if not titolo:
-
-            continue
-
-        contesto = testo_locale_link(
-            elemento
-        )
-
-        if not candidato_utile(
-            titolo,
-            contesto,
-            link,
-        ):
-
-            continue
-
-        testo_completo = normalizza_testo(
-            titolo
-            + " "
-            + contesto
-            + " "
-            + link
-        )
-
-        links_visti.add(
-            link
-        )
-
-        risultati.append(
-            {
-                "titolo": titolo,
-                "link": link,
-                "prima_fascia": contiene_parola(
-                    testo_completo,
-                    PAROLE_PRIMA_FASCIA,
-                ),
-                "docenza": contiene_parola(
-                    testo_completo,
-                    PAROLE_DOCENZA,
-                ),
-                "area": contiene_parola(
-                    testo_completo,
-                    PAROLE_AREA,
-                ),
-                "ricognizione_interna": contiene_parola(
-                    testo_completo,
-                    PAROLE_RICOGNIZIONE_INTERNA,
-                ),
-                "scadenze": estrai_scadenze(
-                    testo_completo
-                ),
-                "contesto": contesto,
-            }
-        )
-
-    print(
-        "\n========================================"
-    )
-
-    print(
-        "SEZIONE:",
-        nome,
-    )
-
-    print(
-        "TIPO:",
-        tipo,
-    )
-
-    print(
-        "========================================"
-    )
-
-    print(
-        "CANDIDATI LOCALI TROVATI:",
-        len(
-            risultati
-        ),
-    )
-
-    for numero, risultato in enumerate(
-        risultati,
-        start=1,
-    ):
-
-        print(
-            "\n----------------------------------------"
-        )
-
-        print(
-            "RISULTATO:",
-            numero,
-        )
-
-        print(
-            "TITOLO:",
-            risultato["titolo"],
-        )
-
-        print(
-            "PRIMA FASCIA:",
-            risultato["prima_fascia"],
-        )
-
-        print(
-            "DOCENZA:",
-            risultato["docenza"],
-        )
-
-        print(
-            "AREA INTERESSE:",
-            risultato["area"],
-        )
-
-        print(
-            "RICOGNIZIONE INTERNA:",
-            risultato["ricognizione_interna"],
-        )
-
-        print(
-            "SCADENZE:",
-            risultato["scadenze"],
-        )
-
-        print(
-            "LINK:",
-            risultato["link"],
-        )
-
-        print(
-            "CONTESTO:",
-            risultato["contesto"][:1600],
-        )
-
-    return risultati
-
-
-# =========================================================
-# MAIN
-# =========================================================
-
-print(
-    "\n=== DIAGNOSTICA ROMA TRE V2 ===\n"
-)
-
-sessione = crea_sessione()
-
-totale = 0
-
-for pagina in PAGINE_ROMATRE:
-
-    print(
-        "\n\nControllo:",
-        pagina["nome"],
-    )
-
+    server = smtplib.SMTP("smtp.gmail.com", 587, timeout=60)
     try:
+        server.starttls()
+        server.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
+        server.send_message(email)
+    finally:
+        server.quit()
+    print("EMAIL INVIATA")
+    return True
 
-        html = scarica_pagina(
-            sessione,
-            pagina["url"],
-        )
 
-        risultati = analizza_pagina(
-            pagina["nome"],
-            pagina["tipo"],
-            pagina["url"],
-            html,
-        )
+print("\n=== MONITOR ROMA TRE ===\n")
+sessione = crea_sessione()
+storico = carica_storico()
+gia_segnalati = set(storico["bandi_gia_segnalati"])
 
-        totale += len(
-            risultati
-        )
-
+candidati = {}
+for url in PAGINE_FONTE:
+    try:
+        html = scarica(sessione, url)
+        for candidato in estrai_link_avvisi(html, url):
+            candidati[candidato["link"]] = candidato
     except Exception as errore:
+        print("Errore fonte:", url, str(errore))
 
-        print(
-            "ERRORE NELLA SEZIONE:",
-            pagina["nome"],
-        )
+print("Candidati Traspare individuati:", len(candidati))
 
-        print(
-            str(
-                errore
-            )
-        )
+bandi = []
+for candidato in candidati.values():
+    risultato = analizza_avviso(sessione, candidato)
+    if risultato:
+        bandi.append(risultato)
 
-print(
-    "\nTOTALE CANDIDATI LOCALI:",
-    totale,
-)
+unici = {b["link"]: b for b in bandi}
+bandi = sorted(unici.values(), key=lambda x: (x["scadenza"], x["titolo"]))
+nuovi = [b for b in bandi if b["link"] not in gia_segnalati]
 
-print(
-    "\n=== FINE DIAGNOSTICA ROMA TRE V2 ==="
-)
+print("Bandi aperti pertinenti:", len(bandi))
+print("Nuovi bandi da segnalare:", len(nuovi))
+
+for bando in nuovi:
+    print("\nNUOVO BANDO:")
+    print("Titolo:", bando["titolo"])
+    print("Tipologia:", bando["tipologia"])
+    print("Scadenza:", bando["scadenza"].strftime("%d/%m/%Y"))
+    print("Link:", bando["link"])
+
+if not nuovi:
+    print("NESSUN NUOVO BANDO")
+else:
+    if invia_email(nuovi):
+        for bando in nuovi:
+            storico["bandi_gia_segnalati"].append(bando["link"])
+        storico["bandi_gia_segnalati"] = list(dict.fromkeys(
+            storico["bandi_gia_segnalati"]
+        ))
+        salva_storico(storico)
+        print("STORICO ROMA TRE AGGIORNATO")
+    else:
+        print("Storico non aggiornato per mancato invio email")
+
+print("\n=== FINE MONITOR ROMA TRE ===")
