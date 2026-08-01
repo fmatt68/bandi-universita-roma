@@ -68,8 +68,11 @@ jobs:
     #  - name: Test Università Europea di Roma
     #    run: python monitor_uer.py
     
-    #  - name: Test API REST Università Europea di Roma
-    #    run: python test_uer_rest.py
+    # UER temporaneamente esclusa:
+    # sito e API bloccati da AWS WAF Human Verification.
+
+      - name: Test LUMSA
+        run: python monitor_lumsa.py
 
       - name: Commit storico aggiornato
         run: |
@@ -84,6 +87,7 @@ jobs:
           git add storico_gemelli.json
           git add storico_romatre.json
           # git add storico_uer.json
+          git add storico_lumsa.json
 
           git diff --staged --quiet || git commit -m "Aggiorna storico.json"
 
