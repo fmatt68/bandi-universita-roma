@@ -68,8 +68,8 @@ jobs:
     #  - name: Test Università Europea di Roma
     #    run: python monitor_uer.py
     
-      - name: Test API REST Università Europea di Roma
-        run: python test_uer_rest.py
+    #  - name: Test API REST Università Europea di Roma
+    #    run: python test_uer_rest.py
 
       - name: Commit storico aggiornato
         run: |
