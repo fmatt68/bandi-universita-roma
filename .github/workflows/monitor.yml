@@ -2,6 +2,12 @@ name: Monitor Bandi
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '15 6 * * 1'
+
+concurrency:
+  group: monitor-bandi
+  cancel-in-progress: false
 
 jobs:
   run-python:
