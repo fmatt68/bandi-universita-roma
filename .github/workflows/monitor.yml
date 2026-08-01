@@ -65,8 +65,8 @@ jobs:
           EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
 
-      - name: Test Università Europea di Roma
-        run: python monitor_uer.py
+    #  - name: Test Università Europea di Roma
+    #    run: python monitor_uer.py
 
       - name: Commit storico aggiornato
         run: |
