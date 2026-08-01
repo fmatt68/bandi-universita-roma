@@ -39,7 +39,7 @@ PAROLE_DOCENZA = [
     "conferimento di incarichi di insegnamento",
     "albo degli idonei",
     "idoneita all'insegnamento",
-    "idoneità all’insegnamento",
+    "idoneità all'insegnamento",
 ]
 
 PAROLE_PRIMA_FASCIA = [
@@ -84,7 +84,7 @@ PAROLE_DA_ESCLUDERE = [
     "regolamento",
     "tabella compensi",
     "allegato",
-    "modello",
+    "modello cv",
     "domanda di partecipazione",
 ]
 
@@ -150,6 +150,7 @@ def pulisci_pagina(soup):
         ".site-footer",
         "[role='navigation']",
     ]
+
     for selettore in selettori:
         for elemento in soup.select(selettore):
             elemento.decompose()
@@ -166,31 +167,42 @@ def trova_contenuto_principale(soup):
         ".content-area",
         "[role='main']",
     ]
+
     for selettore in selettori:
         elemento = soup.select_one(selettore)
+
         if elemento is None:
             continue
-        testo = normalizza_testo(elemento.get_text(" ", strip=True))
+
+        testo = normalizza_testo(
+            elemento.get_text(" ", strip=True)
+        )
+
         if len(testo) >= 100:
             return elemento
+
     return soup.body or soup
 
 
 def estrai_righe(contenuto):
     righe = []
     testo = contenuto.get_text("\n", strip=True)
+
     for riga in testo.splitlines():
         riga = normalizza_testo(riga)
+
         if not riga:
             continue
+
         if righe and riga == righe[-1]:
             continue
+
         righe.append(riga)
+
     return righe
 
 
 def inizia_blocco(riga):
-
     riga_lower = riga.lower()
 
     return any(
@@ -200,62 +212,36 @@ def inizia_blocco(riga):
 
 
 def crea_blocchi(righe):
-
     blocchi = []
-
     indici_inizio = []
 
-    for indice, riga in enumerate(
-        righe
-    ):
+    for indice, riga in enumerate(righe):
+        if inizia_blocco(riga):
+            indici_inizio.append(indice)
 
-        if inizia_blocco(
-            riga
-        ):
-
-            indici_inizio.append(
-                indice
-            )
-
-    for posizione, indice_inizio in enumerate(
-        indici_inizio
-    ):
-
-        if posizione + 1 < len(
-            indici_inizio
-        ):
-
-            indice_fine = indici_inizio[
-                posizione + 1
-            ]
-
+    for posizione, indice_inizio in enumerate(indici_inizio):
+        if posizione + 1 < len(indici_inizio):
+            indice_fine = indici_inizio[posizione + 1]
         else:
-
             indice_fine = min(
                 len(righe),
-                indice_inizio + 30
+                indice_inizio + 30,
             )
 
-        righe_blocco = righe[
-            indice_inizio:indice_fine
-        ]
-
+        righe_blocco = righe[indice_inizio:indice_fine]
         testo_blocco = normalizza_testo(
-            " ".join(
-                righe_blocco
-            )
+            " ".join(righe_blocco)
         )
 
         if testo_blocco:
-
-            blocchi.append(
-                testo_blocco
-            )
+            blocchi.append(testo_blocco)
 
     return blocchi
 
+
 def estrai_scadenze(testo):
     risultati = []
+
     patterns = [
         re.compile(
             r"scadenza(?:\s+presentazione\s+domande)?\s*:?\s*"
@@ -277,15 +263,22 @@ def estrai_scadenze(testo):
     for pattern in patterns:
         for risultato in pattern.findall(testo):
             risultato = normalizza_testo(risultato)
+
             if risultato not in risultati:
                 risultati.append(risultato)
+
     return risultati
 
 
 def titolo_blocco(blocco):
-    for separatore in [" Scadenza", " scadenza", " SCADENZA"]:
+    for separatore in [
+        " Scadenza",
+        " scadenza",
+        " SCADENZA",
+    ]:
         if separatore in blocco:
             return blocco.split(separatore, 1)[0][:600].strip()
+
     return blocco[:600].strip()
 
 
@@ -294,28 +287,18 @@ def analizza_pagina(pagina, html):
     pulisci_pagina(soup)
     contenuto = trova_contenuto_principale(soup)
     righe = estrai_righe(contenuto)
-        print(
-        "\nRIGHE CON PAROLE CHIAVE:"
-    )
+
+    print("\nRIGHE CON PAROLE CHIAVE:")
 
     for riga in righe:
-
         if (
-            contiene(
-                riga,
-                PAROLE_APERTURA
-            )
-            or contiene(
-                riga,
-                PAROLE_DOCENZA
-            )
+            contiene(riga, PAROLE_APERTURA)
+            or contiene(riga, PAROLE_DOCENZA)
+            or contiene(riga, PAROLE_PRIMA_FASCIA)
             or "scadenza" in riga.lower()
         ):
+            print("-", riga[:1000])
 
-            print(
-                "-",
-                riga[:1000]
-            )
     blocchi = crea_blocchi(righe)
 
     print("RIGHE CONTENUTO:", len(righe))
@@ -364,7 +347,8 @@ def analizza_pagina(pagina, html):
     return risultati
 
 
-print("\n=== DIAGNOSTICA LUMSA V2 ===\n")
+print("\n=== DIAGNOSTICA LUMSA V3 ===\n")
+
 sessione = crea_sessione()
 totale = 0
 
@@ -372,12 +356,15 @@ for pagina in PAGINE_LUMSA:
     print("\n========================================")
     print("SEZIONE:", pagina["nome"])
     print("========================================")
+
     try:
         html = scarica(sessione, pagina["url"])
-        totale += len(analizza_pagina(pagina, html))
+        totale += len(
+            analizza_pagina(pagina, html)
+        )
     except Exception as errore:
         print("ERRORE NELLA SEZIONE:", pagina["nome"])
         print(str(errore))
 
 print("\nTOTALE CANDIDATI PERTINENTI:", totale)
-print("\n=== FINE DIAGNOSTICA LUMSA V2 ===")
+print("\n=== FINE DIAGNOSTICA LUMSA V3 ===")
