@@ -190,32 +190,69 @@ def estrai_righe(contenuto):
 
 
 def inizia_blocco(riga):
+
     riga_lower = riga.lower()
-    return any(riga_lower.startswith(parola) for parola in PAROLE_APERTURA)
+
+    return any(
+        parola in riga_lower
+        for parola in PAROLE_APERTURA
+    )
 
 
 def crea_blocchi(righe):
+
     blocchi = []
-    corrente = None
 
-    for riga in righe:
-        if inizia_blocco(riga):
-            if corrente:
-                blocchi.append(corrente)
-            corrente = [riga]
-            continue
+    indici_inizio = []
 
-        if corrente is not None:
-            corrente.append(riga)
-            if len(corrente) >= 14:
-                blocchi.append(corrente)
-                corrente = None
+    for indice, riga in enumerate(
+        righe
+    ):
 
-    if corrente:
-        blocchi.append(corrente)
+        if inizia_blocco(
+            riga
+        ):
 
-    return [normalizza_testo(" ".join(blocco)) for blocco in blocchi]
+            indici_inizio.append(
+                indice
+            )
 
+    for posizione, indice_inizio in enumerate(
+        indici_inizio
+    ):
+
+        if posizione + 1 < len(
+            indici_inizio
+        ):
+
+            indice_fine = indici_inizio[
+                posizione + 1
+            ]
+
+        else:
+
+            indice_fine = min(
+                len(righe),
+                indice_inizio + 30
+            )
+
+        righe_blocco = righe[
+            indice_inizio:indice_fine
+        ]
+
+        testo_blocco = normalizza_testo(
+            " ".join(
+                righe_blocco
+            )
+        )
+
+        if testo_blocco:
+
+            blocchi.append(
+                testo_blocco
+            )
+
+    return blocchi
 
 def estrai_scadenze(testo):
     risultati = []
@@ -257,6 +294,28 @@ def analizza_pagina(pagina, html):
     pulisci_pagina(soup)
     contenuto = trova_contenuto_principale(soup)
     righe = estrai_righe(contenuto)
+        print(
+        "\nRIGHE CON PAROLE CHIAVE:"
+    )
+
+    for riga in righe:
+
+        if (
+            contiene(
+                riga,
+                PAROLE_APERTURA
+            )
+            or contiene(
+                riga,
+                PAROLE_DOCENZA
+            )
+            or "scadenza" in riga.lower()
+        ):
+
+            print(
+                "-",
+                riga[:1000]
+            )
     blocchi = crea_blocchi(righe)
 
     print("RIGHE CONTENUTO:", len(righe))
