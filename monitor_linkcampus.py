@@ -1,5 +1,6 @@
 import requests
 from bs4 import BeautifulSoup
+from bs4.element import NavigableString
 from urllib.parse import urljoin
 
 
@@ -7,8 +8,62 @@ URL_LINK_CAMPUS = (
     "https://unilink.it/ateneo/bandi-e-concorsi/"
 )
 
+PAROLE_DOCENZA = [
+    "docente a contratto",
+    "docenti a contratto",
+    "docenza a contratto",
+    "docenze a contratto",
+    "insegnamento a contratto",
+    "insegnamenti a contratto",
+    "incarico di insegnamento",
+    "incarichi di insegnamento",
+    "incarico di docenza",
+    "incarichi di docenza",
+    "conferimento di insegnamenti",
+    "conferimento degli insegnamenti",
+]
 
-print("\n=== FILE I E II FASCIA LINK CAMPUS ===\n")
+
+def normalizza_testo(testo):
+    return " ".join(
+        str(testo).split()
+    )
+
+
+def raccogli_testi_precedenti(
+    elemento,
+    massimo=25
+):
+    testi = []
+
+    for precedente in elemento.previous_elements:
+        if not isinstance(
+            precedente,
+            NavigableString
+        ):
+            continue
+
+        testo = normalizza_testo(
+            precedente
+        )
+
+        if not testo:
+            continue
+
+        if testo in testi:
+            continue
+
+        testi.append(
+            testo
+        )
+
+        if len(testi) >= massimo:
+            break
+
+    return testi
+
+
+print("\n=== RICERCA DOCENZE LINK CAMPUS ===\n")
 
 risposta = requests.get(
     URL_LINK_CAMPUS,
@@ -22,7 +77,7 @@ soup = BeautifulSoup(
     "html.parser"
 )
 
-documenti = []
+risultati = []
 link_gia_visti = set()
 
 for elemento in soup.find_all(
@@ -34,119 +89,135 @@ for elemento in soup.find_all(
         ""
     )
 
-    href_minuscolo = href.lower()
-
-    if "i_ii_fascia" not in href_minuscolo:
-        continue
-
-    if ".pdf" not in href_minuscolo:
-        continue
-
     link = urljoin(
         URL_LINK_CAMPUS,
         href
     )
 
+    link_minuscolo = link.lower()
+
+    if not any(
+        estensione in link_minuscolo
+        for estensione in [
+            ".pdf",
+            ".doc",
+            ".docx"
+        ]
+    ):
+        continue
+
     if link in link_gia_visti:
+        continue
+
+    titolo_link = normalizza_testo(
+        elemento.get_text(
+            " ",
+            strip=True
+        )
+    )
+
+    testi_precedenti = raccogli_testi_precedenti(
+        elemento,
+        massimo=25
+    )
+
+    contesto = normalizza_testo(
+        " ".join(
+            testi_precedenti
+        )
+    )
+
+    testo_completo = normalizza_testo(
+        titolo_link
+        + " "
+        + contesto
+        + " "
+        + link.replace(
+            "-",
+            " "
+        ).replace(
+            "_",
+            " "
+        )
+    )
+
+    testo_minuscolo = testo_completo.lower()
+
+    parole_trovate = [
+        parola
+        for parola in PAROLE_DOCENZA
+        if parola in testo_minuscolo
+    ]
+
+    if not parole_trovate:
         continue
 
     link_gia_visti.add(
         link
     )
 
-    titolo = " ".join(
-        elemento.get_text(
-            " ",
-            strip=True
-        ).split()
-    )
-
-    nome_file = link.rsplit(
-        "/",
-        1
-    )[-1]
-
-    documenti.append(
+    risultati.append(
         {
-            "titolo": titolo,
-            "nome_file": nome_file,
-            "link": link
+            "titolo_link": titolo_link,
+            "link": link,
+            "parole": parole_trovate,
+            "testi_precedenti": testi_precedenti
         }
     )
 
 print(
-    "Documenti trovati nella cartella I_II_fascia:",
-    len(documenti)
+    "Documenti potenzialmente collegati a docenze:",
+    len(risultati)
 )
 
 print(
-    "\n=== ELENCO DOCUMENTI ==="
+    "\n=== PRIMI 20 RISULTATI ==="
 )
 
-for numero, documento in enumerate(
-    documenti,
+for numero, risultato in enumerate(
+    risultati[:20],
     start=1
 ):
-    nome_minuscolo = documento[
-        "nome_file"
-    ].lower()
-
-    indicatori = []
-
-    if "bando_pa" in nome_minuscolo:
-        indicatori.append(
-            "Possibile professore associato"
-        )
-
-    if "bando_po" in nome_minuscolo:
-        indicatori.append(
-            "Possibile professore ordinario"
-        )
-
-    if "ord" in nome_minuscolo:
-        indicatori.append(
-            "Possibile ordinario"
-        )
-
-    if "prima_fascia" in nome_minuscolo:
-        indicatori.append(
-            "Prima fascia"
-        )
-
-    if "i_fascia" in nome_minuscolo:
-        indicatori.append(
-            "I fascia"
-        )
-
     print(
-        "\n----------------------------------------"
+        "\n========================================"
     )
     print(
-        "DOCUMENTO:",
+        "RISULTATO",
         numero
     )
     print(
+        "========================================"
+    )
+    print(
         "Titolo del link:",
-        documento["titolo"]
+        risultato["titolo_link"]
         or "Titolo non presente"
     )
     print(
-        "Nome del file:",
-        documento["nome_file"]
-    )
-    print(
-        "Indicatori:",
+        "Parole trovate:",
         ", ".join(
-            indicatori
+            risultato["parole"]
         )
-        if indicatori
-        else "Nessun indicatore nel nome"
     )
     print(
         "Link:",
-        documento["link"]
+        risultato["link"]
     )
 
+    print(
+        "\nTesti precedenti:"
+    )
+
+    for posizione, testo in enumerate(
+        risultato["testi_precedenti"][:15],
+        start=1
+    ):
+        print(
+            posizione,
+            "-",
+            testo[:1000]
+        )
+
 print(
-    "\n=== FINE ELENCO DOCUMENTI ==="
+    "\n=== FINE RICERCA DOCENZE ==="
 )
