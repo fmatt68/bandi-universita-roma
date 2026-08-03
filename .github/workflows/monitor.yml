@@ -77,6 +77,9 @@ jobs:
           EMAIL_ADDRESS: ${{ secrets.EMAIL_ADDRESS }}
           EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
 
+      - name: Test Link Campus University
+        run: python monitor_linkcampus.py
+
       - name: Commit storico aggiornato
         run: |
           git config --global user.name "github-actions"
