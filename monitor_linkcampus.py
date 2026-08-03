@@ -1,5 +1,9 @@
+import json
+import os
 import re
+import smtplib
 from datetime import date
+from email.mime.text import MIMEText
 from urllib.parse import urljoin
 
 import requests
@@ -8,6 +12,9 @@ from bs4.element import NavigableString
 
 
 URL_LINK_CAMPUS = "https://unilink.it/ateneo/bandi-e-concorsi/"
+FILE_STORICO = "storico_linkcampus.json"
+EMAIL_ADDRESS = os.getenv("EMAIL_ADDRESS")
+EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
 
 PAROLE_AREA_INTERESSE = [
     "bios-",
@@ -57,6 +64,29 @@ MESI_ITALIANI = {
     "novembre": 11,
     "dicembre": 12,
 }
+
+
+def carica_storico():
+    try:
+        with open(FILE_STORICO, "r", encoding="utf-8") as file:
+            storico = json.load(file)
+
+        if not isinstance(storico, dict):
+            raise ValueError("Formato storico non valido")
+
+        bandi = storico.get("bandi_gia_segnalati")
+        if not isinstance(bandi, list):
+            storico["bandi_gia_segnalati"] = []
+
+        return storico
+
+    except (FileNotFoundError, json.JSONDecodeError, ValueError):
+        return {"bandi_gia_segnalati": []}
+
+
+def salva_storico(storico):
+    with open(FILE_STORICO, "w", encoding="utf-8") as file:
+        json.dump(storico, file, indent=2, ensure_ascii=False)
 
 
 def normalizza_testo(testo):
@@ -209,8 +239,68 @@ def estrai_codici_area(testo):
     return codici
 
 
+def invia_email(bandi_nuovi):
+    if not EMAIL_ADDRESS:
+        print("EMAIL NON CONFIGURATA")
+        return False
+
+    if not EMAIL_PASSWORD:
+        print("EMAIL_PASSWORD NON CONFIGURATA")
+        return False
+
+    righe = [
+        "Nuovi bandi Link Campus University",
+        "",
+        "Sono state individuate nuove procedure aperte, pertinenti e con sede a Roma:",
+        "",
+    ]
+
+    for numero, bando in enumerate(bandi_nuovi, start=1):
+        righe.extend(
+            [
+                "========================================",
+                f"BANDO {numero}",
+                "========================================",
+                f"Fascia: {bando['fascia']}",
+                f"Scadenza: {bando['scadenza'].strftime('%d/%m/%Y')}",
+                "Area: " + (
+                    ", ".join(bando["codici"])
+                    if bando["codici"]
+                    else "Area scientifica individuata"
+                ),
+                "",
+                bando["titolo"],
+                "",
+                bando["descrizione"],
+                "",
+                "Documento principale:",
+                bando["link"],
+                "",
+            ]
+        )
+
+    email = MIMEText("\n".join(righe), "plain", "utf-8")
+    email["Subject"] = "[LINK CAMPUS] Nuovi bandi di I o II fascia"
+    email["From"] = EMAIL_ADDRESS
+    email["To"] = EMAIL_ADDRESS
+
+    server = smtplib.SMTP("smtp.gmail.com", 587, timeout=60)
+    try:
+        server.starttls()
+        server.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
+        server.send_message(email)
+    finally:
+        server.quit()
+
+    print("EMAIL INVIATA")
+    return True
+
+
 def main():
-    print("\n=== PARSER PROFESSORI I E II FASCIA LINK CAMPUS ===\n")
+    print("\n=== MONITOR PROFESSORI I E II FASCIA LINK CAMPUS ===\n")
+
+    storico = carica_storico()
+    gia_segnalati = set(storico["bandi_gia_segnalati"])
 
     sessione = requests.Session()
     sessione.headers.update(
@@ -380,40 +470,49 @@ def main():
     )
 
     print("Bandi pertinenti ancora aperti:", len(procedure_aperte))
-    print("\n=== TUTTI I BANDI PERTINENTI ===")
 
-    for numero, procedura in enumerate(procedure_interessanti, start=1):
-        print("\n========================================")
-        print("BANDO", numero)
-        print("========================================")
-        print("Fascia:", procedura["fascia"])
-        print("Titolo:", procedura["titolo"])
-        print("Descrizione:", procedura["descrizione"])
-        print(
-            "Codici area:",
-            ", ".join(procedura["codici"])
-            if procedura["codici"]
-            else "Non individuati",
-        )
-        print(
-            "Sede Roma:",
-            "Si"
-            if procedura["sede_roma"]
-            else "Non esplicitamente indicata",
-        )
-        print(
-            "Scadenza:",
-            procedura["scadenza"].strftime("%d/%m/%Y")
-            if procedura["scadenza"] is not None
-            else "Non individuata",
-        )
-        print(
-            "Stato:",
-            "APERTO" if procedura["aperta"] else "SCADUTO",
-        )
-        print("Link:", procedura["link"])
+    bandi_nuovi = [
+        procedura
+        for procedura in procedure_aperte
+        if procedura["link"] not in gia_segnalati
+    ]
 
-    print("\n=== FINE VERIFICA PROFESSORI I E II FASCIA ===")
+    print("Nuovi bandi da segnalare:", len(bandi_nuovi))
+
+    if not bandi_nuovi:
+        print("NESSUN NUOVO BANDO")
+    else:
+        for numero, procedura in enumerate(bandi_nuovi, start=1):
+            print("\n========================================")
+            print("NUOVO BANDO", numero)
+            print("========================================")
+            print("Fascia:", procedura["fascia"])
+            print("Titolo:", procedura["titolo"])
+            print("Descrizione:", procedura["descrizione"])
+            print(
+                "Codici area:",
+                ", ".join(procedura["codici"])
+                if procedura["codici"]
+                else "Non individuati",
+            )
+            print("Scadenza:", procedura["scadenza"].strftime("%d/%m/%Y"))
+            print("Link:", procedura["link"])
+
+        if invia_email(bandi_nuovi):
+            storico["bandi_gia_segnalati"].extend(
+                procedura["link"] for procedura in bandi_nuovi
+            )
+            storico["bandi_gia_segnalati"] = list(
+                dict.fromkeys(storico["bandi_gia_segnalati"])
+            )
+            salva_storico(storico)
+            print("STORICO LINK CAMPUS AGGIORNATO")
+        else:
+            print(
+                "Storico non aggiornato perché l'email non è stata inviata"
+            )
+
+    print("\n=== FINE MONITOR LINK CAMPUS ===")
 
 
 if __name__ == "__main__":
