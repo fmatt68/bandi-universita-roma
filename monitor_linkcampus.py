@@ -1,15 +1,13 @@
 import re
-import requests
-
 from datetime import date
-from bs4 import BeautifulSoup
-from bs4.element import NavigableString
 from urllib.parse import urljoin
 
+import requests
+from bs4 import BeautifulSoup
+from bs4.element import NavigableString
 
-URL_LINK_CAMPUS = (
-    "https://unilink.it/ateneo/bandi-e-concorsi/"
-)
+
+URL_LINK_CAMPUS = "https://unilink.it/ateneo/bandi-e-concorsi/"
 
 PAROLE_AREA_INTERESSE = [
     "bios-",
@@ -37,11 +35,9 @@ PAROLE_AREA_INTERESSE = [
     "fisica",
 ]
 
-PAROLE[
-bios-",
-biologia",
-biochimica",
-de di roma",
+PAROLE_SEDE_ROMA = [
+    "roma",
+    "sede di roma",
     "sede prevalente roma",
     "sede di lavoro roma",
     "sede di lavoro prevalente: roma",
@@ -64,34 +60,18 @@ MESI_ITALIANI = {
 
 
 def normalizza_testo(testo):
-    return " ".join(
-        str(testo).split()
-    )
+    return " ".join(str(testo).split())
 
 
-def converti_data(
-    giorno,
-    mese,
-    anno
-):
+def converti_data(giorno, mese, anno):
     try:
         if str(mese).isdigit():
             numero_mese = int(mese)
         else:
-            numero_mese = MESI_ITALIANI[
-                str(mese).lower()
-            ]
+            numero_mese = MESI_ITALIANI[str(mese).lower()]
 
-        return date(
-            int(anno),
-            numero_mese,
-            int(giorno)
-        )
-
-    except (
-        ValueError,
-        KeyError
-    ):
+        return date(int(anno), numero_mese, int(giorno))
+    except (ValueError, KeyError):
         return None
 
 
@@ -99,58 +79,29 @@ def estrai_date_scadenza(testo):
     date_trovate = []
 
     pattern_testuale = re.compile(
-        r"(?:scadenza|termine)"
-        r"[^0-9]{0,100}"
+        r"(?:scadenza|termine)[^0-9]{0,100}"
         r"(\d{1,2})\s+"
-        r"(gennaio|febbraio|marzo|aprile|maggio|"
-        r"giugno|luglio|agosto|settembre|ottobre|"
-        r"novembre|dicembre)\s+"
+        r"(gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|"
+        r"settembre|ottobre|novembre|dicembre)\s+"
         r"(\d{4})",
-        re.IGNORECASE
+        re.IGNORECASE,
     )
 
     pattern_numerico = re.compile(
-        r"(?:scadenza|termine)"
-        r"[^0-9]{0,100}"
-        r"(\d{1,2})[/.-]"
-        r"(\d{1,2})[/.-]"
-        r"(\d{4})",
-        re.IGNORECASE
+        r"(?:scadenza|termine)[^0-9]{0,100}"
+        r"(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})",
+        re.IGNORECASE,
     )
 
-    for giorno, mese, anno in pattern_testuale.findall(
-        testo
-    ):
-        valore = converti_data(
-            giorno,
-            mese,
-            anno
-        )
+    for giorno, mese, anno in pattern_testuale.findall(testo):
+        valore = converti_data(giorno, mese, anno)
+        if valore is not None and valore not in date_trovate:
+            date_trovate.append(valore)
 
-        if (
-            valore is not None
-            and valore not in date_trovate
-        ):
-            date_trovate.append(
-                valore
-            )
-
-    for giorno, mese, anno in pattern_numerico.findall(
-        testo
-    ):
-        valore = converti_data(
-            giorno,
-            mese,
-            anno
-        )
-
-        if (
-            valore is not None
-            and valore not in date_trovate
-        ):
-            date_trovate.append(
-                valore
-            )
+    for giorno, mese, anno in pattern_numerico.findall(testo):
+        valore = converti_data(giorno, mese, anno)
+        if valore is not None and valore not in date_trovate:
+            date_trovate.append(valore)
 
     return date_trovate
 
@@ -160,60 +111,41 @@ def scegli_scadenza(date_trovate):
         return None
 
     date_future = [
-        valore
-        for valore in date_trovate
-        if valore >= date.today()
+        valore for valore in date_trovate if valore >= date.today()
     ]
 
     if date_future:
-        return max(
-            date_future
-        )
+        # In presenza di riapertura termini, la scadenza valida e'
+        # normalmente la data futura piu' recente.
+        return max(date_future)
 
-    return max(
-        date_trovate
-    )
+    return max(date_trovate)
 
 
-def raccogli_dati_procedura(elemento):
+def raccogli_dati_procedura(elemento, massimo=20):
     testi = []
 
     for precedente in elemento.previous_elements:
-        if not isinstance(
-            precedente,
-            NavigableString
-        ):
+        if not isinstance(precedente, NavigableString):
             continue
 
-        testo = normalizza_testo(
-            precedente
-        )
-
-        if not testo:
+        testo = normalizza_testo(precedente)
+        if not testo or testo in testi:
             continue
 
-        if testo in testi:
-            continue
-
-        testi.append(
-            testo
-        )
-
+        testi.append(testo)
         testo_minuscolo = testo.lower()
 
         if (
-            "bando di procedura selettiva"
-            in testo_minuscolo
+            "bando di procedura selettiva" in testo_minuscolo
             and (
-                "prima fascia"
-                in testo_minuscolo
-                or "seconda fascia"
-                in testo_minuscolo
+                "prima fascia" in testo_minuscolo
+                or "seconda fascia" in testo_minuscolo
             )
         ):
             break
 
-        if len(testi) >= 20:
+        if len(testi) >= massimo:
             break
 
     return testi
@@ -221,275 +153,169 @@ def raccogli_dati_procedura(elemento):
 
 def trova_titolo(testi):
     for testo in testi:
-        testo_minuscolo = testo.lower()
-
-        if (
-            "bando di procedura selettiva"
-            in testo_minuscolo
-        ):
+        if "bando di procedura selettiva" in testo.lower():
             return testo
-
     return "Titolo non individuato"
 
 
 def trova_descrizione(testi):
     for testo in testi:
         testo_minuscolo = testo.lower()
-
         if (
-            "gruppo scientifico disciplinare"
-            in testo_minuscolo
-            or "settore scientifico disciplinare"
-            in testo_minuscolo
+            "gruppo scientifico disciplinare" in testo_minuscolo
+            or "settore scientifico disciplinare" in testo_minuscolo
         ):
             return testo
-
     return "Descrizione non individuata"
 
 
 def contiene_area_interesse(testo):
     testo_minuscolo = testo.lower()
-
-    return any(
-        parola in testo_minuscolo
-        for parola in PAROLE_AREA_INTERESSE
-    )
+    return any(parola in testo_minuscolo for parola in PAROLE_AREA_INTERESSE)
 
 
 def sede_roma(testo):
     testo_minuscolo = testo.lower()
-
-    return any(
-        parola in testo_minuscolo
-        for parola in PAROLE_SEDE_ROMA
-    )
+    return any(parola in testo_minuscolo for parola in PAROLE_SEDE_ROMA)
 
 
 def sede_fuori_roma(testo):
     testo_minuscolo = testo.lower()
-
     indicatori_sede = [
         "sede di lavoro prevalente:",
         "sede prevalente:",
-        "sede di lavoro:"
+        "sede di lavoro:",
     ]
 
     sede_indicata = any(
-        indicatore in testo_minuscolo
-        for indicatore in indicatori_sede
+        indicatore in testo_minuscolo for indicatore in indicatori_sede
     )
 
-    return (
-        sede_indicata
-        and not sede_roma(
-            testo
-        )
-    )
+    return sede_indicata and not sede_roma(testo)
 
 
 def estrai_codici_area(testo):
     pattern = re.compile(
-        r"\b(?:\d{2}/)?"
-        r"(?:BIOS|MEDS|MEDF|IINF|PHYS)"
-        r"-\d{2}(?:/[A-Z])?\b",
-        re.IGNORECASE
+        r"\b(?:\d{2}/)?(?:BIOS|MEDS|MEDF|IINF|PHYS)-\d{2}(?:/[A-Z])?\b",
+        re.IGNORECASE,
     )
 
     codici = []
-
-    for codice in pattern.findall(
-        testo
-    ):
-        codice = codice.upper()
-
+    for corrispondenza in pattern.finditer(testo):
+        codice = corrispondenza.group(0).upper()
         if codice not in codici:
-            codici.append(
-                codice
-            )
+            codici.append(codice)
 
     return codici
 
 
-print(
-    "\n=== PARSER PROFESSORI ASSOCIATI LINK CAMPUS ===\n"
-)
+def main():
+    print("\n=== PARSER PROFESSORI ASSOCIATI LINK CAMPUS ===\n")
 
-risposta = requests.get(
-    URL_LINK_CAMPUS,
-    timeout=60
-)
-
-risposta.raise_for_status()
-
-soup = BeautifulSoup(
-    risposta.text,
-    "html.parser"
-)
-
-procedure = []
-link_gia_visti = set()
-
-for elemento in soup.find_all(
-    "a",
-    href=True
-):
-    href = elemento.get(
-        "href",
-        ""
-    )
-
-    href_minuscolo = href.lower()
-
-    if "bando_pa" not in href_minuscolo:
-        continue
-
-    if ".pdf" not in href_minuscolo:
-        continue
-
-    link = urljoin(
-        URL_LINK_CAMPUS,
-        href
-    )
-
-    if link in link_gia_visti:
-        continue
-
-    link_gia_visti.add(
-        link
-    )
-
-    testi = raccogli_dati_procedura(
-        elemento
-    )
-
-    titolo = trova_titolo(
-        testi
-    )
-
-    descrizione = trova_descrizione(
-        testi
-    )
-
-    testo_completo = normalizza_testo(
-        titolo
-        + " "
-        + descrizione
-        + " "
-        + " ".join(testi)
-    )
-
-    date_trovate = estrai_date_scadenza(
-        testo_completo
-    )
-
-    scadenza = scegli_scadenza(
-        date_trovate
-    )
-
-    procedure.append(
+    sessione = requests.Session()
+    sessione.headers.update(
         {
-            "titolo": titolo,
-            "descrizione": descrizione,
-            "link": link,
-            "codici": estrai_codici_area(
-                testo_completo
+            "User-Agent": (
+                "Mozilla/5.0 (X11; Linux x86_64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/126.0 Safari/537.36"
             ),
-            "area_interesse": contiene_area_interesse(
-                testo_completo
-            ),
-            "sede_roma": sede_roma(
-                testo_completo
-            ),
-            "sede_fuori_roma": sede_fuori_roma(
-                testo_completo
-            ),
-            "scadenza": scadenza,
-            "aperta": (
-                scadenza is not None
-                and scadenza >= date.today()
-            )
+            "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
         }
     )
 
-print(
-    "Bandi PA complessivi:",
-    len(procedure)
-)
+    risposta = sessione.get(URL_LINK_CAMPUS, timeout=60)
+    risposta.raise_for_status()
 
-procedure_interessanti = [
-    procedura
-    for procedura in procedure
-    if procedura["area_interesse"]
-    and not procedura["sede_fuori_roma"]
-]
+    soup = BeautifulSoup(risposta.text, "html.parser")
+    procedure = []
+    link_gia_visti = set()
 
-print(
-    "Bandi in area scientifica e non fuori Roma:",
-    len(procedure_interessanti)
-)
+    for elemento in soup.find_all("a", href=True):
+        href = elemento.get("href", "")
+        href_minuscolo = href.lower()
 
-procedure_aperte = [
-    procedura
-    for procedura in procedure_interessanti
-    if procedura["aperta"]
-]
+        if "bando_pa" not in href_minuscolo or ".pdf" not in href_minuscolo:
+            continue
 
-print(
-    "Bandi pertinenti ancora aperti:",
-    len(procedure_aperte)
-)
+        link = urljoin(URL_LINK_CAMPUS, href)
+        if link in link_gia_visti:
+            continue
 
-print(
-    "\n=== BANDI PERTINENTI APERTI ==="
-)
-
-for numero, procedura in enumerate(
-    procedure_aperte,
-    start=1
-):
-    print(
-        "\n========================================"
-    )
-    print(
-        "BANDO",
-        numero
-    )
-    print(
-        "========================================"
-    )
-    print(
-        "Titolo:",
-        procedura["titolo"]
-    )
-    print(
-        "Descrizione:",
-        procedura["descrizione"]
-    )
-    print(
-        "Codici area:",
-        ", ".join(
-            procedura["codici"]
+        link_gia_visti.add(link)
+        testi = raccogli_dati_procedura(elemento)
+        titolo = trova_titolo(testi)
+        descrizione = trova_descrizione(testi)
+        testo_completo = normalizza_testo(
+            titolo + " " + descrizione + " " + " ".join(testi)
         )
-        if procedura["codici"]
-        else "Non individuati"
-    )
-    print(
-        "Sede Roma:",
-        "Sì"
-        if procedura["sede_roma"]
-        else "Non esplicitamente indicata"
-    )
-    print(
-        "Scadenza:",
-        procedura["scadenza"].strftime(
-            "%d/%m/%Y"
+
+        date_trovate = estrai_date_scadenza(testo_completo)
+        scadenza = scegli_scadenza(date_trovate)
+
+        procedure.append(
+            {
+                "titolo": titolo,
+                "descrizione": descrizione,
+                "link": link,
+                "codici": estrai_codici_area(testo_completo),
+                "area_interesse": contiene_area_interesse(testo_completo),
+                "sede_roma": sede_roma(testo_completo),
+                "sede_fuori_roma": sede_fuori_roma(testo_completo),
+                "scadenza": scadenza,
+                "aperta": scadenza is not None and scadenza >= date.today(),
+            }
         )
-    )
+
+    print("Bandi PA complessivi:", len(procedure))
+
+    procedure_interessanti = [
+        procedura
+        for procedura in procedure
+        if procedura["area_interesse"] and not procedura["sede_fuori_roma"]
+    ]
+
     print(
-        "Link:",
-        procedura["link"]
+        "Bandi in area scientifica e non fuori Roma:",
+        len(procedure_interessanti),
     )
 
-print(
-    "\n=== FINE PARSER PROFESSORI ASSOCIATI ==="
-)
+    procedure_aperte = [
+        procedura
+        for procedura in procedure_interessanti
+        if procedura["aperta"]
+    ]
+
+    procedure_aperte.sort(
+        key=lambda procedura: (procedura["scadenza"], procedura["titolo"])
+    )
+
+    print("Bandi pertinenti ancora aperti:", len(procedure_aperte))
+    print("\n=== BANDI PERTINENTI APERTI ===")
+
+    for numero, procedura in enumerate(procedure_aperte, start=1):
+        print("\n========================================")
+        print("BANDO", numero)
+        print("========================================")
+        print("Titolo:", procedura["titolo"])
+        print("Descrizione:", procedura["descrizione"])
+        print(
+            "Codici area:",
+            ", ".join(procedura["codici"])
+            if procedura["codici"]
+            else "Non individuati",
+        )
+        print(
+            "Sede Roma:",
+            "Si"
+            if procedura["sede_roma"]
+            else "Non esplicitamente indicata",
+        )
+        print("Scadenza:", procedura["scadenza"].strftime("%d/%m/%Y"))
+        print("Link:", procedura["link"])
+
+    print("\n=== FINE PARSER PROFESSORI ASSOCIATI ===")
+
+
+if __name__ == "__main__":
+    main()
