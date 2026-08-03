@@ -7,17 +7,9 @@ URL_LINK_CAMPUS = (
     "https://unilink.it/ateneo/bandi-e-concorsi/"
 )
 
-PAROLE_DA_CERCARE = [
-    "prima fascia",
-    "professore ordinario",
-    "professoressa ordinaria",
-    "docente a contratto",
-    "docenti a contratto",
-    "docenza a contratto",
-    "docenze a contratto",
-    "incarico di insegnamento",
-    "incarichi di insegnamento",
-]
+TESTO_FILE_DA_TROVARE = (
+    "1._Bando_PA_D.R._n._2953-2026.pdf"
+)
 
 
 def normalizza_testo(testo):
@@ -26,7 +18,7 @@ def normalizza_testo(testo):
     )
 
 
-print("\n=== DIAGNOSTICA MIRATA LINK CAMPUS ===\n")
+print("\n=== STRUTTURA HTML LINK CAMPUS ===\n")
 
 risposta = requests.get(
     URL_LINK_CAMPUS,
@@ -35,16 +27,12 @@ risposta = requests.get(
 
 risposta.raise_for_status()
 
-print("Pagina raggiunta correttamente")
-print("Status code:", risposta.status_code)
-
 soup = BeautifulSoup(
     risposta.text,
     "html.parser"
 )
 
-risultati = []
-link_gia_visti = set()
+elemento_trovato = None
 
 for elemento in soup.find_all(
     "a",
@@ -55,135 +43,79 @@ for elemento in soup.find_all(
         ""
     )
 
+    if TESTO_FILE_DA_TROVARE in href:
+        elemento_trovato = elemento
+        break
+
+if elemento_trovato is None:
+    print("DOCUMENTO DI PROVA NON TROVATO")
+else:
     link = urljoin(
         URL_LINK_CAMPUS,
-        href
-    )
-
-    link_minuscolo = link.lower()
-
-    if not any(
-        estensione in link_minuscolo
-        for estensione in [
-            ".pdf",
-            ".doc",
-            ".docx"
-        ]
-    ):
-        continue
-
-    if link in link_gia_visti:
-        continue
-
-    titolo_link = normalizza_testo(
-        elemento.get_text(
-            " ",
-            strip=True
+        elemento_trovato.get(
+            "href",
+            ""
         )
     )
 
-    contenitore = elemento
+    print("DOCUMENTO TROVATO")
+    print(
+        "Titolo:",
+        normalizza_testo(
+            elemento_trovato.get_text(
+                " ",
+                strip=True
+            )
+        )
+    )
+    print("Link:", link)
 
-    for livello in range(8):
-        if contenitore.parent is None:
+    nodo = elemento_trovato
+
+    print("\n=== CONTENITORI HTML ===")
+
+    for livello in range(12):
+        nodo = nodo.parent
+
+        if nodo is None:
             break
 
-        contenitore = contenitore.parent
+        nome = nodo.name or "senza-nome"
 
-        testo_contenitore = normalizza_testo(
-            contenitore.get_text(
+        identificativo = nodo.get(
+            "id",
+            ""
+        )
+
+        classi = nodo.get(
+            "class",
+            []
+        )
+
+        if isinstance(
+            classi,
+            list
+        ):
+            classi = " ".join(
+                classi
+            )
+
+        testo = normalizza_testo(
+            nodo.get_text(
                 " ",
                 strip=True
             )
         )
 
-        if (
-            len(testo_contenitore) >= 80
-            and len(testo_contenitore) <= 5000
-        ):
-            break
-
-    testo_completo = normalizza_testo(
-        titolo_link
-        + " "
-        + testo_contenitore
-        + " "
-        + link.replace(
-            "-",
-            " "
-        ).replace(
-            "_",
-            " "
+        print(
+            "\n----------------------------------------"
         )
-    )
+        print("LIVELLO:", livello + 1)
+        print("ELEMENTO:", nome)
+        print("ID:", identificativo or "nessuno")
+        print("CLASSI:", classi or "nessuna")
+        print("LUNGHEZZA TESTO:", len(testo))
+        print("NUMERO LINK:", len(nodo.find_all("a")))
+        print("ANTEPRIMA:", testo[:1000])
 
-    testo_minuscolo = testo_completo.lower()
-
-    parole_trovate = [
-        parola
-        for parola in PAROLE_DA_CERCARE
-        if parola in testo_minuscolo
-    ]
-
-    if not parole_trovate:
-        continue
-
-    link_gia_visti.add(
-        link
-    )
-
-    risultati.append(
-        {
-            "titolo_link": titolo_link,
-            "link": link,
-            "parole": parole_trovate,
-            "contesto": testo_contenitore[:2500]
-        }
-    )
-
-print(
-    "\nDocumenti potenzialmente pertinenti:",
-    len(risultati)
-)
-
-print(
-    "\n=== PRIMI 40 RISULTATI MIRATI ==="
-)
-
-for numero, risultato in enumerate(
-    risultati[:40],
-    start=1
-):
-    print(
-        "\n========================================"
-    )
-    print(
-        "RISULTATO",
-        numero
-    )
-    print(
-        "========================================"
-    )
-    print(
-        "Titolo del link:",
-        risultato["titolo_link"]
-        or "Titolo non presente"
-    )
-    print(
-        "Parole trovate:",
-        ", ".join(
-            risultato["parole"]
-        )
-    )
-    print(
-        "Link:",
-        risultato["link"]
-    )
-    print(
-        "Contesto:",
-        risultato["contesto"]
-    )
-
-print(
-    "\n=== FINE DIAGNOSTICA MIRATA ==="
-)
+print("\n=== FINE STRUTTURA HTML ===")
