@@ -210,7 +210,7 @@ def estrai_codici_area(testo):
 
 
 def main():
-    print("\n=== PARSER PROFESSORI ASSOCIATI LINK CAMPUS ===\n")
+    print("\n=== PARSER PROFESSORI I E II FASCIA LINK CAMPUS ===\n")
 
     sessione = requests.Session()
     sessione.headers.update(
@@ -235,7 +235,19 @@ def main():
         href = elemento.get("href", "")
         href_minuscolo = href.lower()
 
-        if "bando_pa" not in href_minuscolo or ".pdf" not in href_minuscolo:
+        if ".pdf" not in href_minuscolo:
+            continue
+
+        if "bando_pa" in href_minuscolo:
+            fascia = "II fascia - Professore associato"
+        elif (
+            "bando_po" in href_minuscolo
+            or "bando_ord" in href_minuscolo
+            or "prima_fascia" in href_minuscolo
+            or "i_fascia" in href_minuscolo
+        ):
+            fascia = "I fascia - Professore ordinario"
+        else:
             continue
 
         link = urljoin(URL_LINK_CAMPUS, href)
@@ -255,6 +267,7 @@ def main():
 
         procedure.append(
             {
+                "fascia": fascia,
                 "titolo": titolo,
                 "descrizione": descrizione,
                 "link": link,
@@ -267,7 +280,23 @@ def main():
             }
         )
 
-    print("Bandi PA complessivi:", len(procedure))
+    print("Bandi I e II fascia complessivi:", len(procedure))
+    print(
+        "Bandi di I fascia individuati:",
+        sum(
+            1
+            for procedura in procedure
+            if procedura["fascia"].startswith("I fascia")
+        ),
+    )
+    print(
+        "Bandi di II fascia individuati:",
+        sum(
+            1
+            for procedura in procedure
+            if procedura["fascia"].startswith("II fascia")
+        ),
+    )
 
     procedure_interessanti = [
         procedura
@@ -297,6 +326,7 @@ def main():
         print("\n========================================")
         print("BANDO", numero)
         print("========================================")
+        print("Fascia:", procedura["fascia"])
         print("Titolo:", procedura["titolo"])
         print("Descrizione:", procedura["descrizione"])
         print(
@@ -323,7 +353,7 @@ def main():
         )
         print("Link:", procedura["link"])
 
-    print("\n=== FINE VERIFICA PROFESSORI ASSOCIATI ===")
+    print("\n=== FINE VERIFICA PROFESSORI I E II FASCIA ===")
 
 
 if __name__ == "__main__":
