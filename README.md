@@ -1,8 +1,8 @@
 # Bandi Università Roma
 
-Monitoraggio automatico dei bandi universitari pubblicati dagli atenei di Roma.
+Monitoraggio automatico dei bandi pubblicati dalle università e da alcuni enti universitari di Roma.
 
-Il progetto utilizza script Python e GitHub Actions per individuare nuove procedure pertinenti, controllarne la scadenza e inviare una notifica via email.
+Il progetto utilizza script Python e GitHub Actions per individuare nuove procedure pertinenti, verificarne la scadenza e inviare una notifica tramite email.
 
 ## Obiettivo
 
@@ -15,9 +15,9 @@ Il repository monitora principalmente:
 - manifestazioni di interesse per attività didattiche;
 - opportunità scientifiche e biomediche selezionate.
 
-I criteri possono variare in base alla struttura e ai contenuti pubblicati da ciascun ateneo.
+I criteri di ricerca possono variare in base alla struttura e ai contenuti pubblicati da ciascun ateneo.
 
-## Atenei ed enti monitorati
+## Università ed enti monitorati
 
 Il workflow controlla attualmente:
 
@@ -47,7 +47,7 @@ Il monitor Link Campus University controlla le procedure per:
 Sono considerate soltanto le procedure:
 
 - appartenenti alle aree scientifiche e biomediche di interesse;
-- con sede di lavoro a Roma, oppure senza una sede esterna chiaramente indicata;
+- con sede di lavoro a Roma o senza una sede esterna chiaramente indicata;
 - ancora aperte alla data dell’esecuzione;
 - non già segnalate in precedenza.
 
@@ -60,9 +60,10 @@ Il monitor esclude:
 - graduatorie;
 - convocazioni;
 - rinvii delle sedute;
-- regolamenti e documenti accessori.
+- regolamenti;
+- documenti accessori.
 
-La futura comparsa di bandi per docenze a contratto potrà essere gestita con un parser dedicato.
+La futura comparsa di bandi Link Campus per docenze a contratto potrà essere gestita con un parser dedicato.
 
 ## Aree disciplinari
 
@@ -88,7 +89,7 @@ I monitor selezionano principalmente procedure appartenenti ad aree come:
 - informatica e bioinformatica;
 - fisica applicata alle scienze della vita.
 
-Quando disponibili, vengono utilizzati anche i codici dei gruppi e dei settori scientifico-disciplinari, tra cui:
+Quando sono disponibili, vengono utilizzati anche i codici dei gruppi e dei settori scientifico-disciplinari, tra cui:
 
 - BIOS;
 - MEDS;
@@ -127,20 +128,6 @@ storico_linkcampus.json
 storico_lumsa.json
 storico_romatre.json
 storico_torvergata.json
+storico_uer.json
 storico_unicamillus.json
 storico_unicampus.json
-
-## Avvertenza
-
-Questo progetto ha finalità informative e sperimentali.
-
-Non sostituisce la consultazione:
-
-dei siti ufficiali degli atenei;
-dell’Albo online;
-della Gazzetta Ufficiale;
-del portale del Ministero dell’Università e della Ricerca;
-dei documenti ufficiali allegati alle procedure.
-
-Prima di presentare una candidatura è necessario verificare direttamente requisiti, termini, modalità di partecipazione ed eventuali aggiornamenti pubblicati dall’ente responsabile.
-
