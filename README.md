@@ -129,3 +129,18 @@ storico_romatre.json
 storico_torvergata.json
 storico_unicamillus.json
 storico_unicampus.json
+
+## Avvertenza
+
+Questo progetto ha finalità informative e sperimentali.
+
+Non sostituisce la consultazione:
+
+dei siti ufficiali degli atenei;
+dell’Albo online;
+della Gazzetta Ufficiale;
+del portale del Ministero dell’Università e della Ricerca;
+dei documenti ufficiali allegati alle procedure.
+
+Prima di presentare una candidatura è necessario verificare direttamente requisiti, termini, modalità di partecipazione ed eventuali aggiornamenti pubblicati dall’ente responsabile.
+
