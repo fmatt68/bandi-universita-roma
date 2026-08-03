@@ -238,6 +238,12 @@ def main():
         if ".pdf" not in href_minuscolo:
             continue
 
+        # I bandi di professore di I e II fascia sono pubblicati in
+        # questa cartella. Questo controllo esclude in modo netto i
+        # bandi RTT presenti nella cartella /ricercatori/.
+        if "/i_ii_fascia/" not in href_minuscolo:
+            continue
+
         nome_file = href_minuscolo.rsplit("/", 1)[-1]
         titolo_link = normalizza_testo(
             elemento.get_text(" ", strip=True)
@@ -277,6 +283,14 @@ def main():
         )
         testo_minuscolo = testo_completo.lower()
 
+        # Esclude eventuali associazioni errate con procedure RTT.
+        if (
+            "ricercatore universitario a tempo determinato" in testo_minuscolo
+            or "bando_rtt" in href_minuscolo
+            or "/ricercatori/" in href_minuscolo
+        ):
+            continue
+
         if (
             "professore universitario di prima fascia" in testo_minuscolo
             or "professore di prima fascia" in testo_minuscolo
@@ -292,6 +306,20 @@ def main():
         ):
             fascia = "II fascia - Professore associato"
         else:
+            continue
+
+        # Controllo di coerenza tra fascia classificata e titolo.
+        if (
+            fascia.startswith("I fascia")
+            and "seconda fascia" in titolo.lower()
+        ):
+            continue
+
+        if (
+            fascia.startswith("II fascia")
+            and "prima fascia" in titolo.lower()
+            and "seconda fascia" not in titolo.lower()
+        ):
             continue
 
         date_trovate = estrai_date_scadenza(testo_completo)
