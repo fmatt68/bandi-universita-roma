@@ -291,9 +291,9 @@ def main():
     )
 
     print("Bandi pertinenti ancora aperti:", len(procedure_aperte))
-    print("\n=== BANDI PERTINENTI APERTI ===")
+    print("\n=== TUTTI I BANDI PERTINENTI ===")
 
-    for numero, procedura in enumerate(procedure_aperte, start=1):
+    for numero, procedura in enumerate(procedure_interessanti, start=1):
         print("\n========================================")
         print("BANDO", numero)
         print("========================================")
@@ -311,10 +311,19 @@ def main():
             if procedura["sede_roma"]
             else "Non esplicitamente indicata",
         )
-        print("Scadenza:", procedura["scadenza"].strftime("%d/%m/%Y"))
+        print(
+            "Scadenza:",
+            procedura["scadenza"].strftime("%d/%m/%Y")
+            if procedura["scadenza"] is not None
+            else "Non individuata",
+        )
+        print(
+            "Stato:",
+            "APERTO" if procedura["aperta"] else "SCADUTO",
+        )
         print("Link:", procedura["link"])
 
-    print("\n=== FINE PARSER PROFESSORI ASSOCIATI ===")
+    print("\n=== FINE VERIFICA PROFESSORI ASSOCIATI ===")
 
 
 if __name__ == "__main__":
