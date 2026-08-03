@@ -1,14 +1,12 @@
 import requests
 from bs4 import BeautifulSoup
-from bs4.element import NavigableString
-from urllib.parse import urljoin
 
 
 URL_LINK_CAMPUS = (
     "https://unilink.it/ateneo/bandi-e-concorsi/"
 )
 
-PAROLE_DOCENZA = [
+PAROLE_DA_CERCARE = [
     "docente a contratto",
     "docenti a contratto",
     "docenza a contratto",
@@ -21,6 +19,17 @@ PAROLE_DOCENZA = [
     "incarichi di docenza",
     "conferimento di insegnamenti",
     "conferimento degli insegnamenti",
+    "affidamento di insegnamenti",
+    "affidamenti di insegnamenti",
+    "contratto di insegnamento",
+    "contratti di insegnamento",
+    "attività didattica",
+    "attivita didattica",
+    "attività didattiche",
+    "attivita didattiche",
+    "collaborazione didattica",
+    "collaborazioni didattiche",
+    "didattica integrativa",
 ]
 
 
@@ -30,40 +39,7 @@ def normalizza_testo(testo):
     )
 
 
-def raccogli_testi_precedenti(
-    elemento,
-    massimo=25
-):
-    testi = []
-
-    for precedente in elemento.previous_elements:
-        if not isinstance(
-            precedente,
-            NavigableString
-        ):
-            continue
-
-        testo = normalizza_testo(
-            precedente
-        )
-
-        if not testo:
-            continue
-
-        if testo in testi:
-            continue
-
-        testi.append(
-            testo
-        )
-
-        if len(testi) >= massimo:
-            break
-
-    return testi
-
-
-print("\n=== RICERCA DOCENZE LINK CAMPUS ===\n")
+print("\n=== TERMINI DOCENZA NELLA PAGINA LINK CAMPUS ===\n")
 
 risposta = requests.get(
     URL_LINK_CAMPUS,
@@ -77,105 +53,81 @@ soup = BeautifulSoup(
     "html.parser"
 )
 
-risultati = []
-link_gia_visti = set()
-
 for elemento in soup.find_all(
-    "a",
-    href=True
-):
-    href = elemento.get(
-        "href",
-        ""
-    )
-
-    link = urljoin(
-        URL_LINK_CAMPUS,
-        href
-    )
-
-    link_minuscolo = link.lower()
-
-    if not any(
-        estensione in link_minuscolo
-        for estensione in [
-            ".pdf",
-            ".doc",
-            ".docx"
-        ]
-    ):
-        continue
-
-    if link in link_gia_visti:
-        continue
-
-    titolo_link = normalizza_testo(
-        elemento.get_text(
-            " ",
-            strip=True
-        )
-    )
-
-    testi_precedenti = raccogli_testi_precedenti(
-        elemento,
-        massimo=25
-    )
-
-    contesto = normalizza_testo(
-        " ".join(
-            testi_precedenti
-        )
-    )
-
-    testo_completo = normalizza_testo(
-        titolo_link
-        + " "
-        + contesto
-        + " "
-        + link.replace(
-            "-",
-            " "
-        ).replace(
-            "_",
-            " "
-        )
-    )
-
-    testo_minuscolo = testo_completo.lower()
-
-    parole_trovate = [
-        parola
-        for parola in PAROLE_DOCENZA
-        if parola in testo_minuscolo
+    [
+        "script",
+        "style",
+        "header",
+        "footer",
+        "nav"
     ]
+):
+    elemento.decompose()
 
-    if not parole_trovate:
-        continue
-
-    link_gia_visti.add(
-        link
+testo_pagina = normalizza_testo(
+    soup.get_text(
+        " ",
+        strip=True
     )
+)
 
-    risultati.append(
-        {
-            "titolo_link": titolo_link,
-            "link": link,
-            "parole": parole_trovate,
-            "testi_precedenti": testi_precedenti
-        }
-    )
+testo_minuscolo = testo_pagina.lower()
+
+risultati = []
+
+for espressione in PAROLE_DA_CERCARE:
+    posizione_iniziale = 0
+    occorrenze = 0
+
+    while True:
+        posizione = testo_minuscolo.find(
+            espressione,
+            posizione_iniziale
+        )
+
+        if posizione == -1:
+            break
+
+        occorrenze += 1
+
+        inizio_contesto = max(
+            0,
+            posizione - 350
+        )
+
+        fine_contesto = min(
+            len(testo_pagina),
+            posizione + len(espressione) + 650
+        )
+
+        contesto = testo_pagina[
+            inizio_contesto:fine_contesto
+        ]
+
+        risultati.append(
+            {
+                "espressione": espressione,
+                "occorrenza": occorrenze,
+                "contesto": contesto
+            }
+        )
+
+        posizione_iniziale = (
+            posizione
+            + len(espressione)
+        )
 
 print(
-    "Documenti potenzialmente collegati a docenze:",
+    "Occorrenze complessive trovate:",
     len(risultati)
 )
 
 print(
-    "\n=== PRIMI 20 RISULTATI ==="
+    "\n=== RISULTATI ==="
 )
 
 for numero, risultato in enumerate(
-    risultati[:20],
+    risultati[:30],
     start=1
 ):
     print(
@@ -189,35 +141,18 @@ for numero, risultato in enumerate(
         "========================================"
     )
     print(
-        "Titolo del link:",
-        risultato["titolo_link"]
-        or "Titolo non presente"
+        "Espressione:",
+        risultato["espressione"]
     )
     print(
-        "Parole trovate:",
-        ", ".join(
-            risultato["parole"]
-        )
+        "Occorrenza:",
+        risultato["occorrenza"]
     )
     print(
-        "Link:",
-        risultato["link"]
+        "Contesto:",
+        risultato["contesto"]
     )
-
-    print(
-        "\nTesti precedenti:"
-    )
-
-    for posizione, testo in enumerate(
-        risultato["testi_precedenti"][:15],
-        start=1
-    ):
-        print(
-            posizione,
-            "-",
-            testo[:1000]
-        )
 
 print(
-    "\n=== FINE RICERCA DOCENZE ==="
+    "\n=== FINE RICERCA TERMINI DOCENZA ==="
 )
