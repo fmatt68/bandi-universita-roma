@@ -7,8 +7,26 @@ URL_LINK_CAMPUS = (
     "https://unilink.it/ateneo/bandi-e-concorsi/"
 )
 
+PAROLE_DA_CERCARE = [
+    "prima fascia",
+    "professore ordinario",
+    "professoressa ordinaria",
+    "docente a contratto",
+    "docenti a contratto",
+    "docenza a contratto",
+    "docenze a contratto",
+    "incarico di insegnamento",
+    "incarichi di insegnamento",
+]
 
-print("\n=== DIAGNOSTICA LINK CAMPUS UNIVERSITY ===\n")
+
+def normalizza_testo(testo):
+    return " ".join(
+        testo.split()
+    )
+
+
+print("\n=== DIAGNOSTICA MIRATA LINK CAMPUS ===\n")
 
 risposta = requests.get(
     URL_LINK_CAMPUS,
@@ -19,30 +37,22 @@ risposta.raise_for_status()
 
 print("Pagina raggiunta correttamente")
 print("Status code:", risposta.status_code)
-print("URL finale:", risposta.url)
-print("Dimensione HTML:", len(risposta.text))
 
 soup = BeautifulSoup(
     risposta.text,
     "html.parser"
 )
 
-tutti_i_link = soup.find_all(
+risultati = []
+link_gia_visti = set()
+
+for elemento in soup.find_all(
     "a",
     href=True
-)
-
-documenti = []
-
-for elemento in tutti_i_link:
+):
     href = elemento.get(
         "href",
         ""
-    )
-
-    titolo = elemento.get_text(
-        " ",
-        strip=True
     )
 
     link = urljoin(
@@ -52,7 +62,7 @@ for elemento in tutti_i_link:
 
     link_minuscolo = link.lower()
 
-    if any(
+    if not any(
         estensione in link_minuscolo
         for estensione in [
             ".pdf",
@@ -60,31 +70,120 @@ for elemento in tutti_i_link:
             ".docx"
         ]
     ):
-        documenti.append(
-            {
-                "titolo": titolo,
-                "link": link
-            }
+        continue
+
+    if link in link_gia_visti:
+        continue
+
+    titolo_link = normalizza_testo(
+        elemento.get_text(
+            " ",
+            strip=True
+        )
+    )
+
+    contenitore = elemento
+
+    for livello in range(8):
+        if contenitore.parent is None:
+            break
+
+        contenitore = contenitore.parent
+
+        testo_contenitore = normalizza_testo(
+            contenitore.get_text(
+                " ",
+                strip=True
+            )
         )
 
-print("\nCollegamenti complessivi:", len(tutti_i_link))
-print("Documenti PDF, DOC o DOCX:", len(documenti))
+        if (
+            len(testo_contenitore) >= 80
+            and len(testo_contenitore) <= 5000
+        ):
+            break
 
-print("\n=== PRIMI 30 DOCUMENTI INDIVIDUATI ===")
+    testo_completo = normalizza_testo(
+        titolo_link
+        + " "
+        + testo_contenitore
+        + " "
+        + link.replace(
+            "-",
+            " "
+        ).replace(
+            "_",
+            " "
+        )
+    )
 
-for numero, documento in enumerate(
-    documenti[:30],
+    testo_minuscolo = testo_completo.lower()
+
+    parole_trovate = [
+        parola
+        for parola in PAROLE_DA_CERCARE
+        if parola in testo_minuscolo
+    ]
+
+    if not parole_trovate:
+        continue
+
+    link_gia_visti.add(
+        link
+    )
+
+    risultati.append(
+        {
+            "titolo_link": titolo_link,
+            "link": link,
+            "parole": parole_trovate,
+            "contesto": testo_contenitore[:2500]
+        }
+    )
+
+print(
+    "\nDocumenti potenzialmente pertinenti:",
+    len(risultati)
+)
+
+print(
+    "\n=== PRIMI 40 RISULTATI MIRATI ==="
+)
+
+for numero, risultato in enumerate(
+    risultati[:40],
     start=1
 ):
-    print("\nDOCUMENTO", numero)
     print(
-        "Titolo:",
-        documento["titolo"]
+        "\n========================================"
+    )
+    print(
+        "RISULTATO",
+        numero
+    )
+    print(
+        "========================================"
+    )
+    print(
+        "Titolo del link:",
+        risultato["titolo_link"]
         or "Titolo non presente"
     )
     print(
+        "Parole trovate:",
+        ", ".join(
+            risultato["parole"]
+        )
+    )
+    print(
         "Link:",
-        documento["link"]
+        risultato["link"]
+    )
+    print(
+        "Contesto:",
+        risultato["contesto"]
     )
 
-print("\n=== FINE DIAGNOSTICA LINK CAMPUS ===")
+print(
+    "\n=== FINE DIAGNOSTICA MIRATA ==="
+)
