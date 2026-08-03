@@ -1,6 +1,6 @@
 import requests
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin
+from bs4.element import NavigableString, Tag
 
 
 URL_LINK_CAMPUS = (
@@ -14,11 +14,11 @@ TESTO_FILE_DA_TROVARE = (
 
 def normalizza_testo(testo):
     return " ".join(
-        testo.split()
+        str(testo).split()
     )
 
 
-print("\n=== STRUTTURA HTML LINK CAMPUS ===\n")
+print("\n=== ELEMENTI PRECEDENTI LINK CAMPUS ===\n")
 
 risposta = requests.get(
     URL_LINK_CAMPUS,
@@ -50,17 +50,9 @@ for elemento in soup.find_all(
 if elemento_trovato is None:
     print("DOCUMENTO DI PROVA NON TROVATO")
 else:
-    link = urljoin(
-        URL_LINK_CAMPUS,
-        elemento_trovato.get(
-            "href",
-            ""
-        )
-    )
-
     print("DOCUMENTO TROVATO")
     print(
-        "Titolo:",
+        "Titolo del link:",
         normalizza_testo(
             elemento_trovato.get_text(
                 " ",
@@ -68,54 +60,113 @@ else:
             )
         )
     )
-    print("Link:", link)
 
-    nodo = elemento_trovato
+    elementi_precedenti = []
 
-    print("\n=== CONTENITORI HTML ===")
+    for elemento in elemento_trovato.previous_elements:
+        if isinstance(
+            elemento,
+            NavigableString
+        ):
+            testo = normalizza_testo(
+                elemento
+            )
 
-    for livello in range(12):
-        nodo = nodo.parent
+            if not testo:
+                continue
 
-        if nodo is None:
+            elementi_precedenti.append(
+                {
+                    "tipo": "testo",
+                    "nome": "testo",
+                    "classi": "",
+                    "testo": testo
+                }
+            )
+
+        elif isinstance(
+            elemento,
+            Tag
+        ):
+            if elemento.name not in [
+                "h1",
+                "h2",
+                "h3",
+                "h4",
+                "h5",
+                "p",
+                "strong"
+            ]:
+                continue
+
+            testo = normalizza_testo(
+                elemento.get_text(
+                    " ",
+                    strip=True
+                )
+            )
+
+            if not testo:
+                continue
+
+            classi = elemento.get(
+                "class",
+                []
+            )
+
+            if isinstance(
+                classi,
+                list
+            ):
+                classi = " ".join(
+                    classi
+                )
+
+            elementi_precedenti.append(
+                {
+                    "tipo": "tag",
+                    "nome": elemento.name,
+                    "classi": classi,
+                    "testo": testo
+                }
+            )
+
+        if len(
+            elementi_precedenti
+        ) >= 30:
             break
 
-        nome = nodo.name or "senza-nome"
+    print(
+        "\n=== 30 ELEMENTI PRECEDENTI ==="
+    )
 
-        identificativo = nodo.get(
-            "id",
-            ""
-        )
-
-        classi = nodo.get(
-            "class",
-            []
-        )
-
-        if isinstance(
-            classi,
-            list
-        ):
-            classi = " ".join(
-                classi
-            )
-
-        testo = normalizza_testo(
-            nodo.get_text(
-                " ",
-                strip=True
-            )
-        )
-
+    for numero, elemento in enumerate(
+        elementi_precedenti,
+        start=1
+    ):
         print(
             "\n----------------------------------------"
         )
-        print("LIVELLO:", livello + 1)
-        print("ELEMENTO:", nome)
-        print("ID:", identificativo or "nessuno")
-        print("CLASSI:", classi or "nessuna")
-        print("LUNGHEZZA TESTO:", len(testo))
-        print("NUMERO LINK:", len(nodo.find_all("a")))
-        print("ANTEPRIMA:", testo[:1000])
+        print(
+            "POSIZIONE PRIMA DEL LINK:",
+            numero
+        )
+        print(
+            "TIPO:",
+            elemento["tipo"]
+        )
+        print(
+            "ELEMENTO:",
+            elemento["nome"]
+        )
+        print(
+            "CLASSI:",
+            elemento["classi"]
+            or "nessuna"
+        )
+        print(
+            "TESTO:",
+            elemento["testo"][:1500]
+        )
 
-print("\n=== FINE STRUTTURA HTML ===")
+print("\n=== FINE ELEMENTI PRECEDENTI ===")
