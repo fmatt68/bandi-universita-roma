@@ -238,16 +238,30 @@ def main():
         if ".pdf" not in href_minuscolo:
             continue
 
-        if "bando_pa" in href_minuscolo:
-            fascia = "II fascia - Professore associato"
-        elif (
-            "bando_po" in href_minuscolo
-            or "bando_ord" in href_minuscolo
-            or "prima_fascia" in href_minuscolo
-            or "i_fascia" in href_minuscolo
-        ):
-            fascia = "I fascia - Professore ordinario"
-        else:
+        nome_file = href_minuscolo.rsplit("/", 1)[-1]
+        titolo_link = normalizza_testo(
+            elemento.get_text(" ", strip=True)
+        ).lower()
+
+        # Considera soltanto i documenti principali del bando.
+        # Non usa il nome della cartella I_II_fascia per classificare
+        # la fascia, altrimenti verbali e atti successivi diventano
+        # falsi bandi di prima fascia.
+        if "bando" not in nome_file and "bando" not in titolo_link:
+            continue
+
+        parole_accessorie = [
+            "verbale",
+            "commissione",
+            "approvazione",
+            "sostituzione",
+            "rinvio",
+            "regolamento",
+            "allegato_bando",
+            "allegato-bando",
+        ]
+
+        if any(parola in nome_file for parola in parole_accessorie):
             continue
 
         link = urljoin(URL_LINK_CAMPUS, href)
@@ -261,6 +275,24 @@ def main():
         testo_completo = normalizza_testo(
             titolo + " " + descrizione + " " + " ".join(testi)
         )
+        testo_minuscolo = testo_completo.lower()
+
+        if (
+            "professore universitario di prima fascia" in testo_minuscolo
+            or "professore di prima fascia" in testo_minuscolo
+            or "professore ordinario" in testo_minuscolo
+            or "professoressa ordinaria" in testo_minuscolo
+        ):
+            fascia = "I fascia - Professore ordinario"
+        elif (
+            "professore universitario di seconda fascia" in testo_minuscolo
+            or "professore di seconda fascia" in testo_minuscolo
+            or "professore associato" in testo_minuscolo
+            or "professoressa associata" in testo_minuscolo
+        ):
+            fascia = "II fascia - Professore associato"
+        else:
+            continue
 
         date_trovate = estrai_date_scadenza(testo_completo)
         scadenza = scegli_scadenza(date_trovate)
